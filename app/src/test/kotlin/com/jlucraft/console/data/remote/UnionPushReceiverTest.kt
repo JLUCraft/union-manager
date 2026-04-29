@@ -269,4 +269,80 @@ class UnionPushReceiverTest {
     fun `pushEvents is a SharedFlow`() {
         assertTrue(UnionPushReceiver.pushEvents is SharedFlow<*>)
     }
+
+    // ------------------------------------------------------------------ //
+    // 13. onMessage with empty message body defaults to unknown type
+    // ------------------------------------------------------------------ //
+
+    @Test
+    fun `test_empty_message_body`() = runTest {
+        val message = mockPushMessage("")
+        val context = mockContext()
+
+        UnionPushReceiver.pushEvents.test {
+            receiver.onMessage(context, message, "instance")
+            val event = awaitItem()
+            assertEquals("unknown", event.type)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // 14. onMessage with JSON missing type field defaults to unknown
+    // ------------------------------------------------------------------ //
+
+    @Test
+    fun `test_null_type_field`() = runTest {
+        val message = mockPushMessage("""{"name":"test","message":"hello"}""")
+        val context = mockContext()
+
+        UnionPushReceiver.pushEvents.test {
+            receiver.onMessage(context, message, "instance")
+            val event = awaitItem()
+            assertEquals("unknown", event.type)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // 15. onRegistrationFailed emits event with reason
+    // ------------------------------------------------------------------ //
+
+    @Test
+    fun `test_registration_failed_event`() = runTest {
+        val context = mockContext()
+        val reason = mockk<FailedReason>()
+        every { reason.name } returns "NETWORK_ERROR"
+
+        UnionPushReceiver.pushEvents.test {
+            receiver.onRegistrationFailed(context, reason, "instance")
+            val event = awaitItem()
+            assertEquals("registration_failed", event.type)
+            assertEquals("NETWORK_ERROR", event.data["reason"]?.jsonPrimitive?.content)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // 16. multiple rapid messages test backpressure / buffer capacity
+    // ------------------------------------------------------------------ //
+
+    @Test
+    fun `test_multiple_rapid_messages`() = runTest {
+        val context = mockContext()
+
+        UnionPushReceiver.pushEvents.test {
+            repeat(48) { i ->
+                val message = mockPushMessage("""{"type":"test","index":$i}""")
+                receiver.onMessage(context, message, "instance")
+            }
+
+            repeat(48) {
+                val event = awaitItem()
+                assertEquals("test", event.type)
+            }
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }
