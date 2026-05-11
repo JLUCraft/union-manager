@@ -6,7 +6,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
@@ -16,23 +15,30 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jlucraft.console.app.AppServices
+import com.jlucraft.console.data.model.DisputeMatch
 import com.jlucraft.console.data.model.Match
 import com.jlucraft.console.data.model.Tournament
-import com.jlucraft.console.data.model.statusColor
+import com.jlucraft.console.data.model.TournamentStatus
 import com.jlucraft.console.data.model.statusText
 import com.jlucraft.console.data.model.toShortDate
+import com.jlucraft.console.data.model.truncate
+import com.jlucraft.console.ui.components.statusColor
 import com.jlucraft.console.ui.components.DetailRow
 import com.jlucraft.console.ui.components.StatusChip
 import com.jlucraft.console.ui.components.listStatePlaceholders
 import com.jlucraft.console.ui.theme.*
 import com.jlucraft.console.viewmodel.LeagueViewModel
-import com.jlucraft.console.viewmodel.ViewModelFactory
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LeagueScreen(viewModel: LeagueViewModel = viewModel(factory = ViewModelFactory())) {
+fun LeagueScreen(
+    services: AppServices,
+    viewModel: LeagueViewModel = viewModel(),
+) {
     val state = viewModel.uiState.value
 
     when {
@@ -70,7 +76,7 @@ private fun TournamentListScreen(
 ) {
     val tournaments = state.tournaments
     val statusCounts = remember(tournaments) {
-        tournaments.groupingBy { it.status.lowercase() }.eachCount()
+        tournaments.groupingBy { it.status }.eachCount()
     }
 
     Scaffold(
@@ -109,10 +115,10 @@ private fun TournamentListScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    StatusChip("进行中", statusCounts["ongoing"].toString(), MaterialTheme.colorScheme.primary)
-                    StatusChip("报名中", statusCounts["registration"].toString(), StatusGreen)
-                    StatusChip("已结束", statusCounts["completed"].toString(), MaterialTheme.colorScheme.outline)
-                    StatusChip("草稿", statusCounts["draft"].toString(), MaterialTheme.colorScheme.onSurfaceVariant)
+                    StatusChip("进行中", statusCounts[TournamentStatus.Ongoing].toString(), MaterialTheme.colorScheme.primary)
+                    StatusChip("报名中", statusCounts[TournamentStatus.Registration].toString(), StatusGreen)
+                    StatusChip("已结束", statusCounts[TournamentStatus.Completed].toString(), MaterialTheme.colorScheme.outline)
+                    StatusChip("草稿", statusCounts[TournamentStatus.Draft].toString(), MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -362,12 +368,12 @@ private fun TournamentDetailScreen(
     isLoading: Boolean,
     error: String?,
     onBack: () -> Unit,
-    onStatusChange: (String) -> Unit
+    onStatusChange: (TournamentStatus) -> Unit
 ) {
     val nextStatus = when (tournament.status) {
-        "draft" -> "registration" to "开放报名"
-        "registration" -> "ongoing" to "开始比赛"
-        "ongoing" -> "completed" to "结束赛事"
+        TournamentStatus.Draft -> TournamentStatus.Registration to "开放报名"
+        TournamentStatus.Registration -> TournamentStatus.Ongoing to "开始比赛"
+        TournamentStatus.Ongoing -> TournamentStatus.Completed to "结束赛事"
         else -> null
     }
 
@@ -502,6 +508,187 @@ private fun TournamentDetailScreen(
             }
         }
     }
+}
+
+// ── Dispute UI (call from TournamentDetailScreen caller) ──────
+
+@Composable
+fun DisputeListSection(
+    disputes: List<DisputeMatch>,
+    isLoading: Boolean,
+    error: String?,
+    onSelect: (DisputeMatch) -> Unit,
+    onCreateDispute: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "争议 (${disputes.size})",
+                style = MaterialTheme.typography.titleMedium
+            )
+            TextButton(onClick = onCreateDispute) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("提交争议")
+            }
+        }
+
+        when {
+            isLoading -> {
+                Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            error != null -> {
+                Text(
+                    text = "加载争议失败: $error",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+            disputes.isEmpty() -> {
+                Text(
+                    text = "暂无争议",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+            else -> {
+                disputes.forEach { dispute ->
+                    DisputeCard(dispute, onSelect)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DisputeCard(dispute: DisputeMatch, onSelect: (DisputeMatch) -> Unit) {
+    val statusColor = when (dispute.status) {
+        "open" -> StatusAmber
+        "under_review" -> MaterialTheme.colorScheme.primary
+        "resolved" -> StatusGreen
+        "dismissed" -> MaterialTheme.colorScheme.outline
+        else -> MaterialTheme.colorScheme.outline
+    }
+
+    Card(
+        onClick = { onSelect(dispute) },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "比赛 ${dispute.matchId.truncate(12)}",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Surface(
+                    color = statusColor.copy(alpha = 0.12f),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        text = dispute.status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "原因: ${dispute.reason}",
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "提出者: ${dispute.raisedBy.truncate(16)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CreateDisputeDialog(
+    matches: List<Match>,
+    onDismiss: () -> Unit,
+    onCreate: (String, String, List<String>) -> Unit
+) {
+    var selectedMatchId by rememberSaveable { mutableStateOf(matches.firstOrNull()?.id ?: "") }
+    var reason by rememberSaveable { mutableStateOf("") }
+    var evidence by rememberSaveable { mutableStateOf("") }
+    var matchExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("提交争议") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExposedDropdownMenuBox(
+                    expanded = matchExpanded,
+                    onExpandedChange = { matchExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = matches.find { it.id == selectedMatchId }?.let { "第${it.round}轮" } ?: "选择比赛",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("比赛") },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(matchExpanded) }
+                    )
+                    ExposedDropdownMenu(expanded = matchExpanded, onDismissRequest = { matchExpanded = false }) {
+                        matches.forEach { match ->
+                            DropdownMenuItem(
+                                text = { Text("第${match.round}轮 · ${match.statusText()}") },
+                                onClick = { selectedMatchId = match.id; matchExpanded = false }
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    label = { Text("争议原因") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+                OutlinedTextField(
+                    value = evidence,
+                    onValueChange = { evidence = it },
+                    label = { Text("证据（可选）") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val evidenceList = if (evidence.isNotBlank()) listOf(evidence) else emptyList()
+                    onCreate(selectedMatchId, reason, evidenceList)
+                },
+                enabled = selectedMatchId.isNotBlank() && reason.isNotBlank()
+            ) {
+                Text("提交")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
 }
 
 @Composable

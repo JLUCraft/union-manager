@@ -19,12 +19,18 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 sealed interface AppRoute : NavKey {
-    @Serializable data object Dashboard  : AppRoute
-    @Serializable data object Instances  : AppRoute
-    @Serializable data object League     : AppRoute
-    @Serializable data object Governance : AppRoute
-    @Serializable data object AuditLog   : AppRoute
-    @Serializable data object Settings   : AppRoute
+    @Serializable data object Dashboard      : AppRoute
+    @Serializable data object Instances      : AppRoute
+    @Serializable data object League         : AppRoute
+    @Serializable data object Governance     : AppRoute
+    @Serializable data object AuditLog       : AppRoute
+    @Serializable data object Settings       : AppRoute
+    @Serializable data object Season         : AppRoute
+    @Serializable data object Alerts         : AppRoute
+    @Serializable data object NodeScores     : AppRoute
+    @Serializable data object DidResolution  : AppRoute
+    @Serializable data object Devices        : AppRoute
+    @Serializable data object Scheduling     : AppRoute
 }
 
 data class TabSpec(

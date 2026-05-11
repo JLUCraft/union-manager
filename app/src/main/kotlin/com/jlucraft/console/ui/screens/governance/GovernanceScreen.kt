@@ -6,8 +6,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Pending
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -16,27 +18,35 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jlucraft.console.app.AppServices
+import com.jlucraft.console.data.model.MemberSummary
 import com.jlucraft.console.data.model.Proposal
 import com.jlucraft.console.data.model.ProposalSignature
+import com.jlucraft.console.data.model.TestAuthChallengePayload
+import com.jlucraft.console.data.model.description
 import com.jlucraft.console.data.model.displayType
-import com.jlucraft.console.data.model.statusColor
 import com.jlucraft.console.data.model.statusText
 import com.jlucraft.console.data.model.truncate
+import com.jlucraft.console.ui.components.statusColor
 import com.jlucraft.console.ui.components.DetailRow
 import com.jlucraft.console.ui.components.StatusChip
 import com.jlucraft.console.ui.components.listStatePlaceholders
 import com.jlucraft.console.ui.theme.*
+import com.jlucraft.console.viewmodel.CommandViewModel
 import com.jlucraft.console.viewmodel.GovernanceViewModel
-import com.jlucraft.console.viewmodel.ViewModelFactory
+import com.jlucraft.console.viewmodel.StreamStatus
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GovernanceScreen(viewModel: GovernanceViewModel = viewModel(factory = ViewModelFactory())) {
+fun GovernanceScreen(
+    services: AppServices,
+    viewModel: GovernanceViewModel = viewModel(),
+) {
     val state = viewModel.uiState.value
-    val proposals = state.proposals
-    val statusCounts = remember(proposals) {
-        proposals.groupingBy { it.status }.eachCount()
-    }
+    // CommandViewModel for AuthChallengeSheet demonstration (sensitive op sample)
+    val commandViewModel: CommandViewModel = viewModel()
+    val commandState = commandViewModel.uiState.value
 
     Scaffold(
         topBar = {
@@ -49,54 +59,64 @@ fun GovernanceScreen(viewModel: GovernanceViewModel = viewModel(factory = ViewMo
                     TextButton(onClick = { viewModel.refresh() }) {
                         Text("刷新")
                     }
+                    // Stream status indicator
+                    when (state.streamStatus) {
+                        StreamStatus.CONNECTED -> {
+                            TextButton(onClick = {}) {
+                                Text("● 实时", color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        StreamStatus.CONNECTING,
+                        StreamStatus.RECONNECTING -> {
+                            TextButton(onClick = {}) {
+                                Text("◌ 重连中", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                        StreamStatus.OFFLINE -> {
+                            TextButton(onClick = { viewModel.refresh() }) {
+                                Text("○ 离线", color = MaterialTheme.colorScheme.outline)
+                            }
+                        }
+                    }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { viewModel.showCreateDialog() }) {
-                Icon(Icons.Default.Add, contentDescription = "创建提案")
+            if (state.activeTab == "proposals") {
+                FloatingActionButton(onClick = { viewModel.showCreateDialog() }) {
+                    Icon(Icons.Default.Add, contentDescription = "创建提案")
+                }
             }
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    StatusChip("待处理", statusCounts["pending"].toString(), MaterialTheme.colorScheme.primary)
-                    StatusChip("已通过", statusCounts["approved"].toString(), StatusGreen)
-                    StatusChip("已执行", statusCounts["executed"].toString(), StatusBlue)
-                    StatusChip("已过期", statusCounts["expired"].toString(), MaterialTheme.colorScheme.error)
-                }
-            }
-
-            item {
-                Text(
-                    text = "提案列表",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 8.dp)
+        Column(modifier = Modifier.padding(padding)) {
+            // Tab row
+            PrimaryTabRow(selectedTabIndex = if (state.activeTab == "members") 1 else 0) {
+                Tab(
+                    selected = state.activeTab == "proposals",
+                    onClick = { viewModel.setActiveTab("proposals") },
+                    text = { Text("提案") }
+                )
+                Tab(
+                    selected = state.activeTab == "members",
+                    onClick = { viewModel.setActiveTab("members") },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Group, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("成员")
+                        }
+                    }
                 )
             }
 
-            listStatePlaceholders(
-                isLoading = state.isLoading,
-                error = state.error,
-                isEmpty = proposals.isEmpty(),
-                emptyText = "暂无提案"
-            )
+            if (state.lastEvent != null) {
+                StreamActivityBanner(state = state)
+            }
 
-            items(proposals, key = { it.id }) { proposal ->
-                ProposalCard(
-                    proposal = proposal,
-                    onClick = { viewModel.showProposalDetail(proposal) }
-                )
+            when (state.activeTab) {
+                "members" -> MembersTab(viewModel, state, commandViewModel)
+                else -> ProposalsTab(viewModel, state, commandViewModel)
             }
         }
     }
@@ -118,10 +138,355 @@ fun GovernanceScreen(viewModel: GovernanceViewModel = viewModel(factory = ViewMo
             signError = state.signError,
             onDismiss = { viewModel.dismissProposalDetail() },
             onSign = { viewModel.signSelectedProposal() },
-            onExecute = { viewModel.executeProposal(proposal.id) }
+            onExecute = { viewModel.executeProposal(proposal.id) },
+            onSubmitDraft = { viewModel.submitDraft(proposal.id) },
+            onReject = { viewModel.rejectProposal(proposal.id) }
+        )
+    }
+
+    // ── AuthChallengeSheet (sensitive operation sample) ──
+    commandState.challenge?.let { challenge ->
+        AuthChallengeSheet(
+            challenge = challenge,
+            countdownSeconds = commandState.countdownSeconds,
+            isExecuting = commandState.isExecuting,
+            onConfirm = { commandViewModel.confirmChallenge() },
+            onCancel = { commandViewModel.cancelChallenge() }
+        )
+    }
+
+    // ── Command result dialog ──
+    commandState.resultMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { commandViewModel.clearResult() },
+            title = { Text("命令结果") },
+            text = { Text(msg) },
+            confirmButton = {
+                TextButton(onClick = { commandViewModel.clearResult() }) {
+                    Text("确定")
+                }
+            }
+        )
+    }
+
+    // ── VC Result Sheet ──
+    if (state.showVcResultSheet) {
+        VcResultSheet(
+            vcJson = state.issuedVcJson,
+            vc = state.issuedVc,
+            verificationResult = state.vcVerificationResult,
+            onDismiss = { viewModel.dismissVcResult() }
         )
     }
 }
+
+@Composable
+private fun StreamActivityBanner(state: com.jlucraft.console.viewmodel.GovernanceUiState) {
+    val lastEvent = state.lastEvent ?: return
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(
+                text = "最新治理事件：${lastEvent.eventType.name}",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            state.lastEventTime?.let { time ->
+                Text(
+                    text = "时间：$time",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+            lastEvent.proposalId?.let { proposalId ->
+                Text(
+                    text = "提案：$proposalId",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+    }
+}
+
+// ── Proposals Tab ─────────────────────────────────────────────────
+
+@Composable
+private fun ProposalsTab(
+    viewModel: GovernanceViewModel,
+    state: com.jlucraft.console.viewmodel.GovernanceUiState,
+    commandViewModel: CommandViewModel
+) {
+    val proposals = state.proposals
+    val statusCounts = remember(proposals) {
+        proposals.groupingBy { it.status }.eachCount()
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                StatusChip("待处理", statusCounts["pending"].toString(), MaterialTheme.colorScheme.primary)
+                StatusChip("已通过", statusCounts["approved"].toString(), StatusGreen)
+                StatusChip("已执行", statusCounts["executed"].toString(), StatusBlue)
+                StatusChip("已过期", statusCounts["expired"].toString(), MaterialTheme.colorScheme.error)
+            }
+        }
+
+        item {
+            Text(
+                text = "提案列表",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
+        // ── Auth Challenge Demo (sensitive operation sample) ──
+        item {
+            OutlinedButton(
+                onClick = {
+                    commandViewModel.initiateCommand(
+                        cmdType = "test-auth-challenge",
+                        payload = TestAuthChallengePayload(
+                            action = "demo_test",
+                            description = "测试签名命令挑战流程"
+                        )
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("测试签名挑战 (AuthChallengeSheet 演示)")
+            }
+        }
+
+        listStatePlaceholders(
+            isLoading = state.isLoading,
+            error = state.error,
+            isEmpty = proposals.isEmpty(),
+            emptyText = "暂无提案"
+        )
+
+        items(proposals, key = { it.id }) { proposal ->
+            ProposalCard(
+                proposal = proposal,
+                onClick = { viewModel.showProposalDetail(proposal) }
+            )
+        }
+    }
+}
+
+// ── Members Tab ───────────────────────────────────────────────────
+
+@Composable
+private fun MembersTab(
+    viewModel: GovernanceViewModel,
+    state: com.jlucraft.console.viewmodel.GovernanceUiState,
+    commandViewModel: CommandViewModel
+) {
+    val members = state.members
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text(
+                text = "成员列表",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
+        listStatePlaceholders(
+            isLoading = state.membersLoading,
+            error = state.membersError,
+            isEmpty = members.isEmpty() && !state.membersLoading,
+            emptyText = "暂无成员"
+        )
+
+        items(members, key = { it.subjectDid }) { member ->
+            MemberCard(member = member, viewModel = viewModel)
+        }
+    }
+}
+
+@Composable
+private fun MemberCard(member: MemberSummary, viewModel: GovernanceViewModel) {
+    var showRoleDialog by remember { mutableStateOf(false) }
+    var showIssueDialog by remember { mutableStateOf(false) }
+    var showRevokeDialog by remember { mutableStateOf(false) }
+
+    val roleColor = when (member.role) {
+        "president" -> MaterialTheme.colorScheme.primary
+        "admin" -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = member.subjectDid.truncate(24),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+                Surface(
+                    color = roleColor.copy(alpha = 0.12f),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        text = member.role,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = roleColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { showRoleDialog = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("角色", style = MaterialTheme.typography.labelSmall)
+                }
+                OutlinedButton(
+                    onClick = { showIssueDialog = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("签发", style = MaterialTheme.typography.labelSmall)
+                }
+                OutlinedButton(
+                    onClick = { showRevokeDialog = true },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("吊销", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+
+    if (showRoleDialog) {
+        RoleGrantDialog(
+            currentRole = member.role,
+            onDismiss = { showRoleDialog = false },
+            onGrant = { role -> viewModel.grantRole(member.subjectDid, role); showRoleDialog = false }
+        )
+    }
+
+    if (showIssueDialog) {
+        AlertDialog(
+            onDismissRequest = { showIssueDialog = false },
+            title = { Text("签发凭证") },
+            text = { Text("确认向 ${member.subjectDid.truncate(24)} 签发 VC？") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.issueCredential(member.subjectDid); showIssueDialog = false }) {
+                    Text("签发")
+                }
+            },
+            dismissButton = { TextButton(onClick = { showIssueDialog = false }) { Text("取消") } }
+        )
+    }
+
+    if (showRevokeDialog) {
+        var reason by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showRevokeDialog = false },
+            title = { Text("吊销凭证") },
+            text = {
+                Column {
+                    Text("吊销 ${member.subjectDid.truncate(24)} 的凭证后，该成员将无法再进行管理操作。")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = reason,
+                        onValueChange = { reason = it },
+                        label = { Text("吊销原因") },
+                        minLines = 2
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.revokeCredential(member.subjectDid, reason); showRevokeDialog = false },
+                    enabled = reason.isNotBlank()
+                ) {
+                    Text("吊销", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showRevokeDialog = false }) { Text("取消") } }
+        )
+    }
+}
+
+@Composable
+private fun RoleGrantDialog(
+    currentRole: String,
+    onDismiss: () -> Unit,
+    onGrant: (String) -> Unit
+) {
+    val roles = listOf("admin", "member", "guest")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("授予角色") },
+        text = {
+            Column {
+                Text("当前角色: $currentRole")
+                Spacer(modifier = Modifier.height(12.dp))
+                roles.forEach { role ->
+                    if (role != currentRole) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(role)
+                            TextButton(onClick = { onGrant(role) }) {
+                                Text("授予")
+                            }
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    )
+}
+
+// ── Proposal Components (unchanged) ────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -139,7 +504,7 @@ private fun ProposalCard(
 
     val displayType = remember(proposal.proposalType) { proposal.displayType() }
     val description = remember(proposal.payload, displayType) {
-        proposal.payload["description"]?.toString() ?: displayType
+        proposal.payload.description.ifBlank { displayType }
     }
     val proposerLabel = remember(proposal.proposer) { proposal.proposer.truncate(20) }
 
@@ -161,10 +526,10 @@ private fun ProposalCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = statusIcon,
-                            contentDescription = proposal.statusText(),
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = statusIcon,
+                        contentDescription = proposal.statusText(),
                         tint = statusColor,
                         modifier = Modifier.size(16.dp)
                     )
@@ -215,14 +580,16 @@ private fun ProposalDetailBottomSheet(
     signError: String?,
     onDismiss: () -> Unit,
     onSign: () -> Unit,
-    onExecute: () -> Unit
+    onExecute: () -> Unit,
+    onSubmitDraft: () -> Unit,
+    onReject: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
     val displayType = remember(proposal.proposalType) { proposal.displayType() }
     val payloadStr = remember(proposal.payload) { proposal.payload.toString() }
     val description = remember(proposal.payload) {
-        proposal.payload["description"]?.toString() ?: "无描述"
+        proposal.payload.description.ifBlank { "无描述" }
     }
 
     ModalBottomSheet(
@@ -308,36 +675,47 @@ private fun ProposalDetailBottomSheet(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (proposal.status == "pending") {
-                        Button(
-                            onClick = onSign,
-                            modifier = Modifier.weight(1f),
-                            enabled = !isSigning
-                        ) {
-                            if (isSigning) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            } else {
-                                Text("签名提案")
+                    when (proposal.status) {
+                        "draft" -> {
+                            Button(onClick = onSubmitDraft, modifier = Modifier.weight(1f)) {
+                                Text("提交草案")
                             }
                         }
-                    }
-
-                    if (proposal.status == "approved") {
-                        Button(
-                            onClick = onExecute,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("执行提案")
+                        "pending" -> {
+                            Button(
+                                onClick = onSign,
+                                modifier = Modifier.weight(1f),
+                                enabled = !isSigning
+                            ) {
+                                if (isSigning) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                } else {
+                                    Text("签名提案")
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = onReject,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text("否决")
+                            }
                         }
+                        "approved" -> {
+                            Button(onClick = onExecute, modifier = Modifier.weight(1f)) {
+                                Text("执行提案")
+                            }
+                        }
+
                     }
 
                     OutlinedButton(
                         onClick = onDismiss,
-                        modifier = if (proposal.status == "pending" || proposal.status == "approved") Modifier.weight(1f) else Modifier.fillMaxWidth()
+                        modifier = Modifier.weight(1f)
                     ) {
                         Text("关闭")
                     }
@@ -390,7 +768,7 @@ private fun SignatureRow(signature: ProposalSignature) {
 @Composable
 private fun CreateProposalDialog(
     onDismiss: () -> Unit,
-    onCreate: (String, kotlinx.serialization.json.JsonObject) -> Unit,
+    onCreate: (String, com.jlucraft.console.data.model.ProposalPayload) -> Unit,
     error: String?
 ) {
     var selectedType by rememberSaveable { mutableStateOf("add-node") }
@@ -477,12 +855,7 @@ private fun CreateProposalDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    val payload = kotlinx.serialization.json.JsonObject(
-                        mapOf(
-                            "description" to kotlinx.serialization.json.JsonPrimitive(description),
-                            "target" to kotlinx.serialization.json.JsonPrimitive(target)
-                        )
-                    )
+                    val payload = com.jlucraft.console.data.model.proposalPayloadFor(selectedType, description, target)
                     onCreate(selectedType, payload)
                 },
                 enabled = description.isNotBlank()

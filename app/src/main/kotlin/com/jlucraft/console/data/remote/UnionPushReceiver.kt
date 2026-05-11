@@ -1,37 +1,41 @@
 package com.jlucraft.console.data.remote
 
 import android.content.Context
+import com.jlucraft.console.data.model.AuthChallengeEventData
+import com.jlucraft.console.data.model.AlertFiredEventData
+import com.jlucraft.console.data.model.AlertResolvedEventData
+import com.jlucraft.console.data.model.GenericPushEventData
+import com.jlucraft.console.data.model.InstanceCrashEventData
+import com.jlucraft.console.data.model.MatchEventData
+import com.jlucraft.console.data.model.NodeOfflineEventData
+import com.jlucraft.console.data.model.ProposalEventData
+import com.jlucraft.console.data.model.PushEventPayload
+import com.jlucraft.console.data.push.PushNotificationFormatter
+import com.jlucraft.console.data.push.PushNotificationPolicy
+import com.jlucraft.events.v1.PushEventEnvelope
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import org.unifiedpush.android.connector.FailedReason
 import org.unifiedpush.android.connector.MessagingReceiver
 import org.unifiedpush.android.connector.data.PushEndpoint
 import org.unifiedpush.android.connector.data.PushMessage
 
-/** UnifiedPush messaging receiver — normalizes push events to [PushService.WebSocketEvent]. */
-class UnionPushReceiver : MessagingReceiver() {
+public open class UnionPushReceiver : MessagingReceiver() {
 
     override fun onMessage(context: Context, message: PushMessage, instance: String) {
-        val text = message.content.decodeToString()
-        val eventType = try {
-            val obj = kotlinx.serialization.json.Json.decodeFromString<JsonObject>(text)
-            obj["type"]?.jsonPrimitive?.content ?: "unknown"
-        } catch (_: Exception) {
-            "unknown"
-        }
-        val payload = try {
-            kotlinx.serialization.json.Json.decodeFromString<JsonObject>(text)
-        } catch (_: Exception) {
-            buildJsonObject { put("raw", text) }
-        }
-        _pushEvents.tryEmit(PushService.WebSocketEvent(eventType, payload))
+        val (eventType, payload) = parseMessage(message)
+        _pushEvents.tryEmit(PushService.PushEvent(eventType, payload))
 
-        val (title, channel) = notificationMeta(eventType, payload)
-        if (title != null) {
-            NotificationHelper.show(context, title, notificationBody(eventType, payload), channel)
+        if (!PushNotificationPolicy.shouldNotify(eventType)) return
+
+        val meta = PushNotificationFormatter.format(eventType, payload)
+        if (meta.title != null) {
+            NotificationHelper.show(
+                context = context,
+                title = meta.title,
+                body = meta.body,
+                channelId = meta.channelId,
+                intentAction = meta.intentAction
+            )
         }
     }
 
@@ -42,9 +46,9 @@ class UnionPushReceiver : MessagingReceiver() {
 
     override fun onRegistrationFailed(context: Context, reason: FailedReason, instance: String) {
         _pushEvents.tryEmit(
-            PushService.WebSocketEvent(
+            PushService.PushEvent(
                 "registration_failed",
-                buildJsonObject { put("reason", reason.name) }
+                GenericPushEventData(raw = reason.name)
             )
         )
     }
@@ -54,48 +58,107 @@ class UnionPushReceiver : MessagingReceiver() {
     }
 
     companion object {
-        private val notificationEvents = setOf(
-            "instance_crash", "node_offline", "alert_fired", "alert_resolved",
-            "proposal_executed", "proposal_rejected", "match_dispute"
-        )
-        private val alertEvents = setOf("instance_crash", "node_offline", "alert_fired")
+        /**
+         * Event types that should produce notifications.
+         * Kept for backward-compatibility; delegates to [PushNotificationFormatter.NOTIFICATION_EVENTS].
+         */
+        private val notificationEvents = PushNotificationFormatter.NOTIFICATION_EVENTS
 
-        private fun notificationMeta(eventType: String, payload: JsonObject): Pair<String?, String> {
-            if (eventType !in notificationEvents) return null to NotificationHelper.CHANNEL_PUSH
-            val channel = if (eventType in alertEvents) NotificationHelper.CHANNEL_ALERTS else NotificationHelper.CHANNEL_PUSH
-            val title = when (eventType) {
-                "instance_crash" -> "Instance Crash"
-                "node_offline" -> "Node Offline"
-                "alert_fired" -> "Alert Triggered"
-                "alert_resolved" -> "Alert Resolved"
-                "proposal_executed" -> "Proposal Executed"
-                "proposal_rejected" -> "Proposal Rejected"
-                "match_dispute" -> "Match Dispute"
-                else -> null
-            }
-            return title to channel
-        }
+        /**
+         * Alert event types.
+         * Kept for backward-compatibility; delegates to [PushNotificationFormatter.ALERT_EVENTS].
+         */
+        private val alertEvents = PushNotificationFormatter.ALERT_EVENTS
 
-        private fun notificationBody(eventType: String, payload: JsonObject): String {
-            val name = payload["name"]?.jsonPrimitive?.content
-                ?: payload["instance_name"]?.jsonPrimitive?.content
-                ?: payload["id"]?.jsonPrimitive?.content
-                ?: payload["node_id"]?.jsonPrimitive?.content
-            val message = payload["message"]?.jsonPrimitive?.content
-            return when {
-                name != null && message != null -> "$name: $message"
-                name != null -> name
-                message != null -> message
-                else -> "Tap to view details"
+        private fun parseMessage(message: PushMessage): Pair<String, PushEventPayload> {
+            try {
+                val envelope = PushEventEnvelope.parseFrom(message.content)
+                val type = when (envelope.eventType) {
+                    "AuthChallenge", "auth_challenge" -> "AuthChallenge"
+                    "InstanceCrash", "instance_crash" -> "instance_crash"
+                    else -> envelope.eventType
+                }
+                val payload = mapProtoPayload(envelope)
+                return type to payload
+            } catch (_: Exception) {
+                return "unknown" to GenericPushEventData(raw = "<proto: parse error>")
             }
         }
 
-        private val _pushEvents = MutableSharedFlow<PushService.WebSocketEvent>(
+        private fun mapProtoPayload(envelope: PushEventEnvelope): PushEventPayload {
+            return when (envelope.payloadCase) {
+                PushEventEnvelope.PayloadCase.INSTANCE_CRASH -> {
+                    val p = envelope.instanceCrash
+                    InstanceCrashEventData(
+                        instanceId = p.instanceId.nullIfEmpty(),
+                        instanceName = p.instanceName.nullIfEmpty(),
+                        peerId = p.peerId.nullIfEmpty(),
+                        crashedAt = p.crashedAt.nullIfEmpty()
+                    )
+                }
+                PushEventEnvelope.PayloadCase.NODE_OFFLINE -> {
+                    val p = envelope.nodeOffline
+                    NodeOfflineEventData(
+                        peerId = p.peerId.nullIfEmpty(),
+                        lastSeen = p.lastSeen.nullIfEmpty(),
+                        offlineSince = p.offlineSince.nullIfEmpty()
+                    )
+                }
+                PushEventEnvelope.PayloadCase.ALERT_FIRED -> {
+                    val p = envelope.alertFired
+                    AlertFiredEventData(
+                        alertId = p.alertId.nullIfEmpty(),
+                        alertName = p.alertName.nullIfEmpty(),
+                        description = p.description.nullIfEmpty(),
+                        firedAt = p.firedAt.nullIfEmpty()
+                    )
+                }
+                PushEventEnvelope.PayloadCase.ALERT_RESOLVED -> {
+                    val p = envelope.alertResolved
+                    AlertResolvedEventData(
+                        alertId = p.alertId.nullIfEmpty(),
+                        alertName = p.alertName.nullIfEmpty(),
+                        resolvedAt = p.resolvedAt.nullIfEmpty()
+                    )
+                }
+                PushEventEnvelope.PayloadCase.PROPOSAL -> {
+                    val p = envelope.proposal
+                    ProposalEventData(
+                        proposalId = p.proposalId.nullIfEmpty(),
+                        title = p.title.nullIfEmpty(),
+                        humanSummary = p.humanSummary.nullIfEmpty(),
+                        actor = p.actor.nullIfEmpty(),
+                        actorPubkey = p.actorPubkey.nullIfEmpty()
+                    )
+                }
+                PushEventEnvelope.PayloadCase.AUTH_CHALLENGE -> {
+                    val p = envelope.authChallenge
+                    AuthChallengeEventData(
+                        humanSummary = p.humanSummary.nullIfEmpty(),
+                        actor = p.actor.nullIfEmpty(),
+                        actorPubkey = p.actorPubkey.nullIfEmpty(),
+                        cmdType = p.cmdType.nullIfEmpty()
+                    )
+                }
+                PushEventEnvelope.PayloadCase.MATCH -> {
+                    val p = envelope.match
+                    MatchEventData(
+                        matchId = p.matchId.nullIfEmpty(),
+                        opponentName = p.opponentName.nullIfEmpty()
+                    )
+                }
+                else -> GenericPushEventData(raw = "<proto: no payload>")
+            }
+        }
+
+        private fun String.nullIfEmpty(): String? = if (isEmpty()) null else this
+
+        private val _pushEvents = MutableSharedFlow<PushService.PushEvent>(
             replay = 0,
             extraBufferCapacity = 64,
             onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
         )
-        val pushEvents: kotlinx.coroutines.flow.SharedFlow<PushService.WebSocketEvent> = _pushEvents
+        val pushEvents: kotlinx.coroutines.flow.SharedFlow<PushService.PushEvent> = _pushEvents
 
         private val _endpointFlow = MutableSharedFlow<String>(
             replay = 1,
@@ -117,7 +180,7 @@ class UnionPushReceiver : MessagingReceiver() {
 
         private fun resolveDistributorName(context: Context, endpointUrl: String): String {
             return if (endpointUrl.contains("fcm.googleapis.com")) {
-                "Embedded FCM (内置)"
+                "Embedded FCM (\u5185\u7F6E)"
             } else {
                 try {
                     val uri = java.net.URI(endpointUrl)

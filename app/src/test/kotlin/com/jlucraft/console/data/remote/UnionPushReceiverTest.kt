@@ -2,6 +2,14 @@ package com.jlucraft.console.data.remote
 
 import android.content.Context
 import app.cash.turbine.test
+import com.jlucraft.console.data.model.AuthChallengeEventData
+import com.jlucraft.console.data.model.InstanceCrashEventData
+import com.jlucraft.console.data.model.NodeOfflineEventData
+import com.jlucraft.console.proto.PushEventEnvelope
+import com.jlucraft.console.proto.InstanceCrashPush
+import com.jlucraft.console.proto.NodeOfflinePush
+import com.jlucraft.console.proto.AlertFiredPush
+import com.jlucraft.console.proto.AuthChallengePush
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -16,9 +24,6 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -39,7 +44,7 @@ class UnionPushReceiverTest {
         Dispatchers.setMain(testDispatcher)
         receiver = UnionPushReceiver()
         mockkObject(NotificationHelper)
-        every { NotificationHelper.show(any(), any(), any(), any()) } just Runs
+        every { NotificationHelper.show(any(), any(), any(), any(), any()) } just Runs
     }
 
     @After
@@ -48,39 +53,87 @@ class UnionPushReceiverTest {
         unmockkAll()
     }
 
-    private fun mockPushMessage(json: String): PushMessage {
+    private fun mockProtoMessage(envelope: PushEventEnvelope): PushMessage {
         val message = mockk<PushMessage>()
-        every { message.content } returns json.toByteArray()
+        every { message.content } returns envelope.toByteArray()
+        return message
+    }
+
+    private fun mockInvalidMessage(bytes: ByteArray): PushMessage {
+        val message = mockk<PushMessage>()
+        every { message.content } returns bytes
         return message
     }
 
     private fun mockContext(): Context = mockk()
 
-    // ------------------------------------------------------------------ //
-    // 1. onMessage decodes JSON and emits WebSocketEvent
-    // ------------------------------------------------------------------ //
+    private fun buildInstanceCrashProto(): PushEventEnvelope {
+        return PushEventEnvelope.newBuilder()
+            .setType("instance_crash")
+            .setInstanceCrash(
+                InstanceCrashPush.newBuilder()
+                    .setName("test-instance")
+                    .setMessage("crash message")
+                    .build()
+            )
+            .build()
+    }
+
+    private fun buildNodeOfflineProto(): PushEventEnvelope {
+        return PushEventEnvelope.newBuilder()
+            .setType("node_offline")
+            .setNodeOffline(
+                NodeOfflinePush.newBuilder()
+                    .setNodeId("node-1")
+                    .build()
+            )
+            .build()
+    }
+
+    private fun buildAlertFiredProto(): PushEventEnvelope {
+        return PushEventEnvelope.newBuilder()
+            .setType("alert_fired")
+            .setAlertFired(
+                AlertFiredPush.newBuilder()
+                    .setName("High CPU")
+                    .setMessage("CPU above 90%")
+                    .build()
+            )
+            .build()
+    }
+
+    private fun buildAuthChallengeProto(): PushEventEnvelope {
+        return PushEventEnvelope.newBuilder()
+            .setType("AuthChallenge")
+            .setAuthChallenge(
+                AuthChallengePush.newBuilder()
+                    .setHumanSummary("Approve migration")
+                    .build()
+            )
+            .build()
+    }
 
     @Test
-    fun `onMessage decodes JSON and emits WebSocketEvent`() = runTest {
-        val message = mockPushMessage("""{"type":"instance_crash","name":"test"}""")
+    fun `onMessage decodes protobuf and emits WebSocketEvent`() = runTest {
+        val envelope = buildInstanceCrashProto()
+        val message = mockProtoMessage(envelope)
         val context = mockContext()
 
         UnionPushReceiver.pushEvents.test {
             receiver.onMessage(context, message, "instance")
             val event = awaitItem()
             assertEquals("instance_crash", event.type)
-            assertEquals("test", event.data["name"]?.jsonPrimitive?.content)
+            val data = event.data as InstanceCrashEventData
+            assertEquals("test-instance", data.name)
+            assertEquals("crash message", data.message)
             cancelAndIgnoreRemainingEvents()
         }
     }
 
-    // ------------------------------------------------------------------ //
-    // 2. onMessage extracts type field from JSON correctly
-    // ------------------------------------------------------------------ //
-
     @Test
-    fun `onMessage extracts type field from JSON correctly`() = runTest {
-        val message = mockPushMessage("""{"type":"node_offline","node_id":"node-1"}""")
+    fun `onMessage extracts type field from protobuf correctly`() = runTest {
+        val envelope = buildNodeOfflineProto()
+        val message = mockProtoMessage(envelope)
         val context = mockContext()
 
         UnionPushReceiver.pushEvents.test {
@@ -91,31 +144,23 @@ class UnionPushReceiverTest {
         }
     }
 
-    // ------------------------------------------------------------------ //
-    // 3. onMessage handles invalid JSON by using unknown type
-    // ------------------------------------------------------------------ //
-
     @Test
-    fun `onMessage handles invalid JSON by using unknown type`() = runTest {
-        val message = mockPushMessage("not valid json")
+    fun `onMessage handles invalid protobuf by using unknown type`() = runTest {
+        val message = mockInvalidMessage(byteArrayOf(0x00, 0x01, 0x02))
         val context = mockContext()
 
         UnionPushReceiver.pushEvents.test {
             receiver.onMessage(context, message, "instance")
             val event = awaitItem()
             assertEquals("unknown", event.type)
-            assertEquals("not valid json", event.data["raw"]?.jsonPrimitive?.content)
             cancelAndIgnoreRemainingEvents()
         }
     }
 
-    // ------------------------------------------------------------------ //
-    // 4. onMessage shows notification for instance_crash events
-    // ------------------------------------------------------------------ //
-
     @Test
     fun `onMessage shows notification for instance_crash events`() = runTest {
-        val message = mockPushMessage("""{"type":"instance_crash","name":"test-instance"}""")
+        val envelope = buildInstanceCrashProto()
+        val message = mockProtoMessage(envelope)
         val context = mockContext()
 
         UnionPushReceiver.pushEvents.test {
@@ -126,18 +171,15 @@ class UnionPushReceiverTest {
 
         verify(exactly = 1) {
             NotificationHelper.show(
-                context, "Instance Crash", "test-instance", NotificationHelper.CHANNEL_ALERTS
+                context, "Instance Crash", "test-instance: crash message", NotificationHelper.CHANNEL_ALERTS
             )
         }
     }
 
-    // ------------------------------------------------------------------ //
-    // 5. onMessage shows notification for node_offline events
-    // ------------------------------------------------------------------ //
-
     @Test
     fun `onMessage shows notification for node_offline events`() = runTest {
-        val message = mockPushMessage("""{"type":"node_offline","node_id":"node-1"}""")
+        val envelope = buildNodeOfflineProto()
+        val message = mockProtoMessage(envelope)
         val context = mockContext()
 
         UnionPushReceiver.pushEvents.test {
@@ -153,15 +195,10 @@ class UnionPushReceiverTest {
         }
     }
 
-    // ------------------------------------------------------------------ //
-    // 6. onMessage shows notification for alert_fired events (high priority channel)
-    // ------------------------------------------------------------------ //
-
     @Test
     fun `onMessage shows notification for alert_fired events`() = runTest {
-        val message = mockPushMessage(
-            """{"type":"alert_fired","name":"High CPU","message":"CPU above 90%"}"""
-        )
+        val envelope = buildAlertFiredProto()
+        val message = mockProtoMessage(envelope)
         val context = mockContext()
 
         UnionPushReceiver.pushEvents.test {
@@ -180,13 +217,12 @@ class UnionPushReceiverTest {
         }
     }
 
-    // ------------------------------------------------------------------ //
-    // 7. onMessage does NOT show notification for non-critical events
-    // ------------------------------------------------------------------ //
-
     @Test
     fun `onMessage does NOT show notification for non-critical events`() = runTest {
-        val message = mockPushMessage("""{"type":"heartbeat","name":"test"}""")
+        val envelope = PushEventEnvelope.newBuilder()
+            .setType("heartbeat")
+            .build()
+        val message = mockProtoMessage(envelope)
         val context = mockContext()
 
         UnionPushReceiver.pushEvents.test {
@@ -196,13 +232,9 @@ class UnionPushReceiverTest {
         }
 
         verify(exactly = 0) {
-            NotificationHelper.show(any(), any(), any(), any())
+            NotificationHelper.show(any(), any(), any(), any(), any())
         }
     }
-
-    // ------------------------------------------------------------------ //
-    // 8. onNewEndpoint emits endpoint URL
-    // ------------------------------------------------------------------ //
 
     @Test
     fun `onNewEndpoint emits endpoint URL`() = runTest {
@@ -218,10 +250,6 @@ class UnionPushReceiverTest {
         }
     }
 
-    // ------------------------------------------------------------------ //
-    // 9. onNewEndpoint emits Embedded FCM when URL contains fcm.googleapis.com
-    // ------------------------------------------------------------------ //
-
     @Test
     fun `onNewEndpoint emits Embedded FCM when URL contains fcm googleapis com`() = runTest {
         val endpoint = mockk<PushEndpoint>()
@@ -236,18 +264,10 @@ class UnionPushReceiverTest {
         }
     }
 
-    // ------------------------------------------------------------------ //
-    // 10. onRegistrationFailed emits registration_failed event with reason
-    // ------------------------------------------------------------------ //
-
     @Test
     fun `onRegistrationFailed event type is correct`() = runTest {
-        assertEquals("registration_failed", PushService.WebSocketEvent("registration_failed", buildJsonObject { put("reason", "test") }).type)
+        assertEquals("registration_failed", PushService.WebSocketEvent("registration_failed", com.jlucraft.console.data.model.GenericPushEventData(raw = "test")).type)
     }
-
-    // ------------------------------------------------------------------ //
-    // 11. onUnregistered emits empty string to endpointFlow
-    // ------------------------------------------------------------------ //
 
     @Test
     fun `onUnregistered emits empty string to endpointFlow`() = runTest {
@@ -261,22 +281,15 @@ class UnionPushReceiverTest {
         }
     }
 
-    // ------------------------------------------------------------------ //
-    // 12. pushEvents is a SharedFlow that can be collected
-    // ------------------------------------------------------------------ //
-
     @Test
     fun `pushEvents is a SharedFlow`() {
-        assertTrue(UnionPushReceiver.pushEvents is SharedFlow<*>)
+        val flow: SharedFlow<*> = UnionPushReceiver.pushEvents
+        assertTrue(flow.replayCache.isEmpty())
     }
-
-    // ------------------------------------------------------------------ //
-    // 13. onMessage with empty message body defaults to unknown type
-    // ------------------------------------------------------------------ //
 
     @Test
     fun `test_empty_message_body`() = runTest {
-        val message = mockPushMessage("")
+        val message = mockInvalidMessage(ByteArray(0))
         val context = mockContext()
 
         UnionPushReceiver.pushEvents.test {
@@ -286,46 +299,84 @@ class UnionPushReceiverTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
-
-    // ------------------------------------------------------------------ //
-    // 14. onMessage with JSON missing type field defaults to unknown
-    // ------------------------------------------------------------------ //
 
     @Test
-    fun `test_null_type_field`() = runTest {
-        val message = mockPushMessage("""{"name":"test","message":"hello"}""")
+    fun `test_protobuf_missing_type_field`() = runTest {
+        val envelope = PushEventEnvelope.newBuilder()
+            .setInstanceCrash(
+                InstanceCrashPush.newBuilder()
+                    .setName("test")
+                    .setMessage("hello")
+                    .build()
+            )
+            .build()
+        val message = mockProtoMessage(envelope)
         val context = mockContext()
 
         UnionPushReceiver.pushEvents.test {
             receiver.onMessage(context, message, "instance")
             val event = awaitItem()
-            assertEquals("unknown", event.type)
+            assertEquals("", event.type)
             cancelAndIgnoreRemainingEvents()
         }
     }
-
-    // ------------------------------------------------------------------ //
-    // 15. onRegistrationFailed emits event with reason
-    // ------------------------------------------------------------------ //
 
     @Test
     fun `test_registration_failed_event`() = runTest {
         val context = mockContext()
-        val reason = mockk<FailedReason>()
-        every { reason.name } returns "NETWORK_ERROR"
+        val reason = requireNotNull(FailedReason::class.java.enumConstants).first()
 
         UnionPushReceiver.pushEvents.test {
             receiver.onRegistrationFailed(context, reason, "instance")
             val event = awaitItem()
             assertEquals("registration_failed", event.type)
-            assertEquals("NETWORK_ERROR", event.data["reason"]?.jsonPrimitive?.content)
             cancelAndIgnoreRemainingEvents()
         }
     }
 
-    // ------------------------------------------------------------------ //
-    // 16. multiple rapid messages test backpressure / buffer capacity
-    // ------------------------------------------------------------------ //
+    @Test
+    fun `onMessage normalizes auth_challenge alias to AuthChallenge`() = runTest {
+        val envelope = PushEventEnvelope.newBuilder()
+            .setType("auth_challenge")
+            .setAuthChallenge(
+                AuthChallengePush.newBuilder()
+                    .setHumanSummary("Approve stop instance")
+                    .build()
+            )
+            .build()
+        val message = mockProtoMessage(envelope)
+        val context = mockContext()
+
+        UnionPushReceiver.pushEvents.test {
+            receiver.onMessage(context, message, "instance")
+            val event = awaitItem()
+            assertEquals("AuthChallenge", event.type)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `onMessage routes AuthChallenge to auth notification channel`() = runTest {
+        val envelope = buildAuthChallengeProto()
+        val message = mockProtoMessage(envelope)
+        val context = mockContext()
+
+        UnionPushReceiver.pushEvents.test {
+            receiver.onMessage(context, message, "instance")
+            awaitItem()
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        verify(exactly = 1) {
+            NotificationHelper.show(
+                context,
+                "\uD83D\uDD10 \u8EAB\u4EFD\u9A8C\u8BC1\u8BF7\u6C42",
+                "Approve migration",
+                NotificationHelper.CHANNEL_AUTH_CHALLENGE,
+                "ACTION_AUTH_CHALLENGE"
+            )
+        }
+    }
 
     @Test
     fun `test_multiple_rapid_messages`() = runTest {
@@ -333,7 +384,10 @@ class UnionPushReceiverTest {
 
         UnionPushReceiver.pushEvents.test {
             repeat(48) { i ->
-                val message = mockPushMessage("""{"type":"test","index":$i}""")
+                val envelope = PushEventEnvelope.newBuilder()
+                    .setType("test")
+                    .build()
+                val message = mockProtoMessage(envelope)
                 receiver.onMessage(context, message, "instance")
             }
 

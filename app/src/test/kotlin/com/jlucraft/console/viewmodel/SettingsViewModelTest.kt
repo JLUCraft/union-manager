@@ -5,11 +5,13 @@ import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.auth.BiometricAuthManager
 import com.jlucraft.console.data.auth.BiometricResult
 import com.jlucraft.console.data.auth.TeeAuthManager
+import com.jlucraft.console.data.auth.TeeCapability
 import com.jlucraft.console.data.local.SettingsStore
 import com.jlucraft.console.data.model.Device
+import com.jlucraft.console.app.ServerUrlUpdater
 import com.jlucraft.console.data.remote.UnionPushReceiver
+import com.jlucraft.console.data.remote.PushPreferencesResponse
 import com.jlucraft.console.data.repository.NodeRepository
-import com.jlucraft.console.di.ServiceLocator
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -23,6 +25,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -45,6 +49,7 @@ class SettingsViewModelTest {
     private lateinit var biometric: BiometricAuthManager
     private lateinit var nodeRepository: NodeRepository
     private lateinit var authCoordinator: AuthCoordinator
+    private lateinit var serverUrlUpdater: ServerUrlUpdater
 
     @Before
     fun setUp() {
@@ -55,11 +60,10 @@ class SettingsViewModelTest {
         biometric = mockk(relaxed = true)
         nodeRepository = mockk(relaxed = true)
         authCoordinator = mockk(relaxed = true)
-
-        mockkObject(ServiceLocator)
-        every { ServiceLocator.nodeRepository } returns nodeRepository
-        every { ServiceLocator.authCoordinator } returns authCoordinator
-        coEvery { ServiceLocator.setServerUrl(any()) } just runs
+        serverUrlUpdater = mockk(relaxed = true)
+        every { teeAuth.capability } returns TeeCapability.TeeOnlyAvailable
+        every { teeAuth.hasKey() } returns false
+        coEvery { serverUrlUpdater.setServerUrl(any()) } just runs
     }
 
     @After
@@ -69,7 +73,14 @@ class SettingsViewModelTest {
     }
 
     private fun createViewModel(): SettingsViewModel =
-        SettingsViewModel(settingsStore, teeAuth, biometric)
+        SettingsViewModel(
+            settingsStore,
+            teeAuth,
+            biometric,
+            nodeRepository,
+            authCoordinator,
+            serverUrlUpdater,
+        )
 
     private fun createDevice(
         pubkey: String = "pk-test",
@@ -131,15 +142,15 @@ class SettingsViewModelTest {
         assertFalse(vm.uiState.value.hasTeeKey)
     }
 
-    // ─── 3. setServerUrl updates settings store and service locator ─
+    // ─── 3. setServerUrl updates settings store and runtime services ─
 
     @Test
-    fun `setServerUrl updates settings store and service locator`() {
+    fun `setServerUrl updates settings store and runtime services`() {
         val oldUrl = "http://old:8080"
         val newUrl = "http://new:9090"
 
         every { settingsStore.currentServerUrl } returns oldUrl andThen newUrl
-        coEvery { ServiceLocator.setServerUrl(any()) } returns Unit
+        coEvery { serverUrlUpdater.setServerUrl(any()) } returns Unit
 
         val vm = createViewModel()
         assertEquals(oldUrl, vm.uiState.value.serverUrl)
@@ -147,7 +158,7 @@ class SettingsViewModelTest {
         vm.setServerUrl(newUrl)
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 1) { ServiceLocator.setServerUrl(newUrl) }
+        coVerify(exactly = 1) { serverUrlUpdater.setServerUrl(newUrl) }
         assertEquals(newUrl, vm.uiState.value.serverUrl)
     }
 
@@ -294,7 +305,6 @@ class SettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("Embedded FCM (内置)", vm.uiState.value.distributorInfo)
-        assertEquals("FCM", vm.uiState.value.distributorBadge)
     }
 
     @Test
@@ -305,22 +315,20 @@ class SettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("External Distributor", vm.uiState.value.distributorInfo)
-        assertEquals("外部", vm.uiState.value.distributorBadge)
     }
 
     @Test
-    fun `distributor info flow updates badge after distributor changes`() {
+    fun `distributor info flow updates after distributor changes`() {
         UnionPushReceiver.setDistributorInfo("Embedded FCM (内置)")
 
         val vm = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
-        assertEquals("FCM", vm.uiState.value.distributorBadge)
+        assertEquals("Embedded FCM (内置)", vm.uiState.value.distributorInfo)
 
         UnionPushReceiver.setDistributorInfo("ntfy")
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("ntfy", vm.uiState.value.distributorInfo)
-        assertEquals("外部", vm.uiState.value.distributorBadge)
     }
 
     // ─── revokeDevice ──────────────────────────────────────────────
@@ -378,6 +386,52 @@ class SettingsViewModelTest {
         assertFalse(vm.uiState.value.devicesLoading)
         assertEquals("服务器内部错误", vm.uiState.value.devicesError)
         coVerify { authCoordinator.clearAuth() }
+    }
+
+    @Test
+    fun `revokeDevice auth payload binds revoked_by matching repository call`() {
+        // Setup a distinct public key so we can verify it flows from teeAuth → payload → repository
+        every { teeAuth.getPublicKey() } returns "pk-actor-settings"
+
+        val revokedDevice = createDevice("pk-revoke", "revoked")
+        coEvery {
+            authCoordinator.authenticateForOperation(any(), any(), any(), any())
+        } returns Result.success(Unit)
+        coEvery {
+            nodeRepository.revokeDevice("pk-revoke", "测试吊销原因", "pk-actor-settings")
+        } returns Result.success(revokedDevice)
+        coEvery { nodeRepository.listDevices() } returns Result.success(listOf(revokedDevice))
+        every { authCoordinator.clearAuth() } just runs
+        coEvery { nodeRepository.getPushPreferences() } returns Result.success(PushPreferencesResponse())
+
+        // Capture the auth payload
+        val capturedPayloads = mutableListOf<JsonObject>()
+        coEvery {
+            authCoordinator.authenticateForOperation(any(), any(), any(), any())
+        } answers {
+            capturedPayloads.add(arg<JsonObject>(1))
+            Result.success(Unit)
+        }
+
+        val vm = createViewModel()
+        // Allow init coroutines (syncPushPreferencesFromServer etc.) to run
+        testDispatcher.scheduler.runCurrent()
+        // Discard the init-triggered authenticateForOperation capture
+        capturedPayloads.clear()
+
+        vm.revokeDevice("pk-revoke", "测试吊销原因")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Verify auth payload fields match the REST operation
+        val payload = capturedPayloads.single()
+        assertEquals("pk-revoke", payload["target_pubkey"]?.jsonPrimitive?.content)
+        assertEquals("测试吊销原因", payload["reason"]?.jsonPrimitive?.content)
+        assertEquals("pk-actor-settings", payload["revoked_by"]?.jsonPrimitive?.content)
+
+        // Verify repository was called with the identical revokedBy
+        coVerify(exactly = 1) {
+            nodeRepository.revokeDevice("pk-revoke", "测试吊销原因", "pk-actor-settings")
+        }
     }
 
     // ─── emergencyRevokeDevice ─────────────────────────────────────
@@ -438,6 +492,48 @@ class SettingsViewModelTest {
         coVerify { authCoordinator.clearAuth() }
     }
 
+    @Test
+    fun `emergencyRevokeDevice auth payload binds revoked_by matching repository call`() {
+        every { teeAuth.getPublicKey() } returns "pk-actor-settings"
+
+        val device = createDevice("pk-emergency", "revoked")
+        coEvery {
+            authCoordinator.authenticateForOperation(any(), any(), any(), any())
+        } returns Result.success(Unit)
+        coEvery {
+            nodeRepository.emergencyRevokeDevice("pk-emergency", "紧急吊销", "pk-actor-settings")
+        } returns Result.success(device)
+        coEvery { nodeRepository.listDevices() } returns Result.success(listOf(device))
+        every { authCoordinator.clearAuth() } just runs
+        coEvery { nodeRepository.getPushPreferences() } returns Result.success(PushPreferencesResponse())
+
+        val capturedPayloads = mutableListOf<JsonObject>()
+        coEvery {
+            authCoordinator.authenticateForOperation(any(), any(), any(), any())
+        } answers {
+            capturedPayloads.add(arg<JsonObject>(1))
+            Result.success(Unit)
+        }
+
+        val vm = createViewModel()
+        // Allow init coroutines (syncPushPreferencesFromServer etc.) to run
+        testDispatcher.scheduler.runCurrent()
+        // Discard the init-triggered authenticateForOperation capture
+        capturedPayloads.clear()
+
+        vm.emergencyRevokeDevice("pk-emergency", "紧急吊销")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val payload = capturedPayloads.single()
+        assertEquals("pk-emergency", payload["target_pubkey"]?.jsonPrimitive?.content)
+        assertEquals("紧急吊销", payload["reason"]?.jsonPrimitive?.content)
+        assertEquals("pk-actor-settings", payload["revoked_by"]?.jsonPrimitive?.content)
+
+        coVerify(exactly = 1) {
+            nodeRepository.emergencyRevokeDevice("pk-emergency", "紧急吊销", "pk-actor-settings")
+        }
+    }
+
     // ─── clearRevokeSuccess ────────────────────────────────────────
 
     @Test
@@ -479,7 +575,6 @@ class SettingsViewModelTest {
         val vm = createViewModel()
 
         assertEquals("检测中...", vm.uiState.value.distributorInfo)
-        assertEquals("", vm.uiState.value.distributorBadge)
         assertNull(vm.uiState.value.biometricResult)
         assertTrue(vm.uiState.value.devices.isEmpty())
         assertFalse(vm.uiState.value.devicesLoading)

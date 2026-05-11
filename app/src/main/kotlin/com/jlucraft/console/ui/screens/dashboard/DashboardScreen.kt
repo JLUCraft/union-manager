@@ -13,15 +13,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jlucraft.console.app.AppServices
 import com.jlucraft.console.data.model.Alert
 import com.jlucraft.console.data.model.Node
+import com.jlucraft.console.ui.components.AdminQuickLinksCard
+import com.jlucraft.console.ui.navigation.AppRoute
 import com.jlucraft.console.ui.theme.*
 import com.jlucraft.console.viewmodel.DashboardViewModel
-import com.jlucraft.console.viewmodel.ViewModelFactory
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(viewModel: DashboardViewModel = viewModel(factory = ViewModelFactory())) {
+fun DashboardScreen(
+    services: AppServices,
+    viewModel: DashboardViewModel = viewModel(),
+    onNavigate: ((AppRoute) -> Unit)? = null,
+) {
     val state = viewModel.uiState.value
 
     val nodes = remember(state.nodeScores, state.health) {
@@ -103,6 +110,9 @@ fun DashboardScreen(viewModel: DashboardViewModel = viewModel(factory = ViewMode
             item { NodeListPanel(nodes) }
             item { InstanceOverviewPanel(runningCount, stoppedCount, migratingCount, degradedCount) }
             item { NetworkTopologyPanel(peerCount.coerceAtLeast(1), peerCount) }
+            if (onNavigate != null) {
+                item { AdminQuickLinksCard(onNavigate) }
+            }
         }
     }
 }
@@ -336,3 +346,5 @@ private fun StatusMetric(label: String, value: String, color: androidx.compose.u
         )
     }
 }
+
+

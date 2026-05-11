@@ -15,6 +15,9 @@ dependencyResolutionManagement {
         mavenCentral()
         maven { url = uri("https://maven.aliyun.com/repository/public") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://dl.cloudsmith.io/public/libp2p/jvm-libp2p/maven/") }
+        maven { url = uri("https://jitpack.io") }
+        maven { url = uri("https://artifacts.consensys.net/public/maven/maven/") }
     }
 }
 

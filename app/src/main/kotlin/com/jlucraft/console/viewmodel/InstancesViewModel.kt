@@ -5,12 +5,26 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jlucraft.console.data.auth.AuthCoordinator
+import com.jlucraft.console.data.auth.withAuthenticatedOperation
+import com.jlucraft.console.domain.auth.AuthenticatedOperationUseCase
+import com.jlucraft.console.data.model.AdmissionPolicy
+import com.jlucraft.console.data.model.AuthPayload
+import com.jlucraft.console.data.model.BatchOperationPayload
+import com.jlucraft.console.data.model.CreateInstancePayload
+import com.jlucraft.console.data.model.CreateInstanceRequest
 import com.jlucraft.console.data.model.Instance
-import com.jlucraft.console.data.repository.NodeRepository
-import com.jlucraft.console.di.ServiceLocator
+import com.jlucraft.console.data.model.InstanceRuntimeSpec
+import com.jlucraft.console.data.model.MigrateInstancePayload
+import com.jlucraft.console.data.model.ResourceRequest
+import com.jlucraft.console.data.model.StartInstancePayload
+import com.jlucraft.console.data.model.StopInstancePayload
+import com.jlucraft.console.data.model.StopInstanceWithReasonPayload
+import com.jlucraft.console.data.model.UpdateInstanceConfigPayload
+import com.jlucraft.console.data.remote.PushService
+import com.jlucraft.console.data.remote.libp2p.Libp2pClient
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
+import javax.inject.Inject
 
 data class InstancesUiState(
     val isLoading: Boolean = false,
@@ -31,13 +45,20 @@ data class InstancesUiState(
     val batchProgress: Int = 0,
     val batchTotal: Int = 0,
     val batchErrors: List<String> = emptyList(),
-    val batchAborted: Boolean = false
+    val batchAborted: Boolean = false,
+    // Config update state
+    val showConfigDialog: Boolean = false,
+    val configUpdateError: String? = null
 )
 
-class InstancesViewModel(
-    private val repository: NodeRepository,
-    private val authCoordinator: AuthCoordinator
+@HiltViewModel
+class InstancesViewModel @Inject constructor(
+    private val client: Libp2pClient,
+    private val authCoordinator: AuthCoordinator,
+    pushService: PushService,
 ) : ViewModel() {
+
+    private val authenticatedOperation = AuthenticatedOperationUseCase(authCoordinator)
 
     private val _uiState = mutableStateOf(InstancesUiState())
     val uiState: State<InstancesUiState> = _uiState
@@ -45,7 +66,7 @@ class InstancesViewModel(
     init {
         refresh()
         viewModelScope.launch {
-            ServiceLocator.pushService.events.collect { event ->
+            pushService.events.collect { event ->
                 when (event.type) {
                     "instance_started", "instance_stopped", "instance_crash",
                     "instance_created", "instance_deleted", "instance_migrated",
@@ -58,7 +79,7 @@ class InstancesViewModel(
     fun refresh() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            val result = repository.getInstances()
+            val result = client.getInstances()
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 instances = result.getOrNull() ?: emptyList(),
@@ -69,24 +90,22 @@ class InstancesViewModel(
 
     fun startInstance(instanceId: String) {
         performAuthenticatedOperation(
-            cmdType = "instance-start",
-            payload = JsonObject(mapOf("instance_id" to JsonPrimitive(instanceId))),
+            cmdType = "start-instance",
+            payload = StartInstancePayload(instanceId),
             title = "启动实例",
             subtitle = "请验证身份以启动实例",
-            operation = { repository.startInstance(instanceId) },
-            successMessage = null,
+            operation = { client.startInstance(instanceId) },
             failureMessage = "启动失败"
         )
     }
 
-    fun stopInstance(instanceId: String) {
+    fun stopInstance(instanceId: String, reason: String? = null) {
         performAuthenticatedOperation(
-            cmdType = "instance-stop",
-            payload = JsonObject(mapOf("instance_id" to JsonPrimitive(instanceId))),
+            cmdType = "stop-instance",
+            payload = if (reason != null) StopInstanceWithReasonPayload(instanceId, reason) else StopInstancePayload(instanceId),
             title = "停止实例",
-            subtitle = "请验证身份以停止实例",
-            operation = { repository.stopInstance(instanceId) },
-            successMessage = null,
+            subtitle = "请验证身份以停止实例" + (reason?.let { "（原因: $it）" } ?: ""),
+            operation = { if (reason != null) client.stopInstanceWithReason(instanceId, reason) else client.stopInstance(instanceId) },
             failureMessage = "停止失败"
         )
     }
@@ -100,79 +119,86 @@ class InstancesViewModel(
         cpuCores: Int,
         memoryGb: Int,
         diskGb: Int,
-        admissionMode: String = "public"
+        admission: AdmissionPolicy = AdmissionPolicy(mode = "public")
     ) {
-        val request = com.jlucraft.console.data.remote.CreateInstanceRequest(
+        val request = CreateInstanceRequest(
             name = name,
             kind = kind,
             owner = owner,
             club = club,
-            runtime = com.jlucraft.console.data.remote.InstanceRuntimeSpec(
+            runtime = InstanceRuntimeSpec(
                 image = image
             ),
-            resources = com.jlucraft.console.data.remote.ResourceRequest(
+            resources = ResourceRequest(
                 cpuCores = cpuCores,
                 memoryGb = memoryGb,
                 diskGb = diskGb
             ),
-            admission = com.jlucraft.console.data.remote.AdmissionPolicy(
-                mode = admissionMode
-            )
+            admission = admission
         )
         performAuthenticatedOperation(
-            cmdType = "instance-create",
-            payload = JsonObject(mapOf(
-                "name" to JsonPrimitive(name),
-                "kind" to JsonPrimitive(kind),
-                "owner" to JsonPrimitive(owner),
-                "club" to JsonPrimitive(club)
-            )),
+            cmdType = "create-instance",
+            payload = CreateInstancePayload(name, kind, owner, club),
             title = "创建实例",
             subtitle = "请验证身份以创建实例",
-            operation = { repository.createInstance(request) },
-            successMessage = null,
+            operation = { client.createInstance(request) },
             failureMessage = "创建失败"
         )
     }
 
     fun migrateInstance(instanceId: String, targetHost: String) {
         performAuthenticatedOperation(
-            cmdType = "instance-migrate",
-            payload = JsonObject(mapOf(
-                "instance_id" to JsonPrimitive(instanceId),
-                "target_host" to JsonPrimitive(targetHost)
-            )),
+            cmdType = "migrate-instance",
+            payload = MigrateInstancePayload(instanceId, targetHost),
             title = "迁移实例",
             subtitle = "请验证身份以迁移实例",
-            operation = { repository.migrateInstance(instanceId, targetHost) },
-            successMessage = null,
+            operation = { client.migrateInstance(instanceId, targetHost) },
             failureMessage = "迁移失败"
         )
     }
 
+    fun autoMigrateInstance(instanceId: String) {
+        performAuthenticatedOperation(
+            cmdType = "migrate-instance",
+            payload = MigrateInstancePayload(instanceId),
+            title = "自动迁移实例",
+            subtitle = "请验证身份以触发自动迁移",
+            operation = { client.migrateInstance(instanceId, null) },
+            failureMessage = "迁移失败"
+        )
+    }
+
+    fun updateInstanceConfig(instanceId: String, config: Map<String, String>) {
+        performAuthenticatedOperation(
+            cmdType = "update-instance-config",
+            payload = UpdateInstanceConfigPayload(instanceId, config),
+            title = "更新实例配置",
+            subtitle = "请验证身份以更新实例配置",
+            operation = { client.updateInstanceConfig(instanceId, config) },
+            failureMessage = "配置更新失败"
+        )
+    }
+
+    fun showConfigDialog() {
+        _uiState.value = _uiState.value.copy(showConfigDialog = true, configUpdateError = null)
+    }
+
+    fun dismissConfigDialog() {
+        _uiState.value = _uiState.value.copy(showConfigDialog = false, configUpdateError = null)
+    }
+
     private fun <T> performAuthenticatedOperation(
         cmdType: String,
-        payload: JsonObject,
+        payload: AuthPayload,
         title: String,
         subtitle: String,
         operation: suspend () -> Result<T>,
-        successMessage: String?,
         failureMessage: String
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isAuthing = true, authError = null, operationError = null)
-            val authResult = authCoordinator.authenticateForOperation(cmdType, payload, title, subtitle)
-            val result: Result<T> = if (authResult.isFailure) {
-                Result.failure(authResult.exceptionOrNull()!!)
-            } else {
-                try {
-                    operation()
-                } catch (e: Exception) {
-                    Result.failure(e)
-                } finally {
-                    authCoordinator.clearAuth()
-                }
-            }
+            val result = authenticatedOperation.execute(cmdType, payload, title, subtitle, operation, failureMessage)
+
             if (result.isSuccess) {
                 _uiState.value = _uiState.value.copy(isAuthing = false, operationError = null)
                 refresh()
@@ -258,8 +284,8 @@ class InstancesViewModel(
             operationType = "start",
             title = "批量启动实例",
             subtitle = "请验证身份以批量启动 ${ _uiState.value.selectedInstanceIds.size } 个实例",
-            cmdType = "instance-batch-start",
-            operation = { instanceId -> repository.startInstance(instanceId) }
+            cmdType = "batch-start",
+            operation = { instanceId -> client.startInstance(instanceId) }
         )
     }
 
@@ -268,8 +294,8 @@ class InstancesViewModel(
             operationType = "stop",
             title = "批量停止实例",
             subtitle = "请验证身份以批量停止 ${ _uiState.value.selectedInstanceIds.size } 个实例",
-            cmdType = "instance-batch-stop",
-            operation = { instanceId -> repository.stopInstance(instanceId) }
+            cmdType = "batch-stop",
+            operation = { instanceId -> client.stopInstance(instanceId) }
         )
     }
 
@@ -278,8 +304,8 @@ class InstancesViewModel(
             operationType = "migrate",
             title = "批量迁移实例",
             subtitle = "请验证身份以批量迁移 ${ _uiState.value.selectedInstanceIds.size } 个实例",
-            cmdType = "instance-batch-migrate",
-            operation = { instanceId -> repository.migrateInstance(instanceId, targetHost) }
+            cmdType = "batch-migrate",
+            operation = { instanceId -> client.migrateInstance(instanceId, targetHost) }
         )
     }
 
@@ -303,13 +329,34 @@ class InstancesViewModel(
                 batchAborted = false
             )
 
-            val batchPayload = JsonObject(mapOf(
-                "instance_ids" to JsonPrimitive(instanceIds.joinToString(",")),
-                "count" to JsonPrimitive(instanceIds.size),
-                "operation" to JsonPrimitive(operationType)
-            ))
+            val batchPayload = BatchOperationPayload(
+                instanceIds = instanceIds.joinToString(","),
+                count = instanceIds.size,
+                operation = operationType
+            )
 
-            val authResult = authCoordinator.authenticateForOperation(cmdType, batchPayload, title, subtitle)
+            val authResult = authCoordinator.withAuthenticatedOperation(cmdType, batchPayload, title, subtitle) {
+                val errors = mutableListOf<String>()
+                for ((index, instanceId) in instanceIds.withIndex()) {
+                    if (_uiState.value.batchAborted) {
+                        errors.add("操作已中止 (${index}/${instanceIds.size})")
+                        break
+                    }
+
+                    _uiState.value = _uiState.value.copy(batchProgress = index + 1)
+
+                    try {
+                        val result = operation(instanceId)
+                        if (result.isFailure) {
+                            errors.add("实例 $instanceId: ${result.exceptionOrNull()?.message}")
+                        }
+                    } catch (e: Exception) {
+                        errors.add("实例 $instanceId: ${e.message}")
+                    }
+                }
+                errors
+            }
+
             if (authResult.isFailure) {
                 _uiState.value = _uiState.value.copy(
                     batchOperationInProgress = false,
@@ -318,26 +365,7 @@ class InstancesViewModel(
                 return@launch
             }
 
-            val errors = mutableListOf<String>()
-            for ((index, instanceId) in instanceIds.withIndex()) {
-                if (_uiState.value.batchAborted) {
-                    errors.add("操作已中止 (${index}/${instanceIds.size})")
-                    break
-                }
-
-                _uiState.value = _uiState.value.copy(batchProgress = index + 1)
-
-                try {
-                    val result = operation(instanceId)
-                    if (result.isFailure) {
-                        errors.add("实例 $instanceId: ${result.exceptionOrNull()?.message}")
-                    }
-                } catch (e: Exception) {
-                    errors.add("实例 $instanceId: ${e.message}")
-                }
-            }
-
-            authCoordinator.clearAuth()
+            val errors = authResult.getOrThrow()
 
             _uiState.value = _uiState.value.copy(
                 batchOperationInProgress = false,
@@ -352,7 +380,7 @@ class InstancesViewModel(
     fun fetchLogs(instanceId: String, tail: Int = 100) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(logsLoading = true, logsError = null)
-            val result = repository.getInstanceLogs(instanceId, tail)
+            val result = client.getInstanceLogs(instanceId, tail)
             _uiState.value = _uiState.value.copy(
                 logsLoading = false,
                 logs = result.getOrNull() ?: emptyList(),

@@ -19,14 +19,8 @@ class BiometricAuthManager(
         subtitle: String = "请验证身份以继续操作"
     ): BiometricResult = suspendCancellableCoroutine { continuation ->
         val activity = fragmentActivity
-            ?: (context as? FragmentActivity)
-            ?: try {
-                if (context is android.app.Activity && context is androidx.lifecycle.LifecycleOwner) {
-                    context as? FragmentActivity
-                } else null
-            } catch (_: Exception) { null }
             ?: run {
-                continuation.resume(BiometricResult.Error("需要 FragmentActivity 或 Activity 上下文"))
+                continuation.resume(BiometricResult.Error("需要 FragmentActivity 上下文"))
                 return@suspendCancellableCoroutine
             }
 

@@ -1,7 +1,5 @@
 package com.jlucraft.console.data.remote
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -12,46 +10,61 @@ import com.jlucraft.console.ui.MainActivity
 object NotificationHelper {
     const val CHANNEL_PUSH = "union_push"
     const val CHANNEL_ALERTS = "union_alerts"
+    const val CHANNEL_AUTH_CHALLENGE = "union_auth_challenge"
     private const val NOTIFICATION_ID_BASE = 5000
 
+    /** Intent extra key for AuthChallenge deep-link routing. */
+    const val EXTRA_AUTH_CHALLENGE_EVENT = "auth_challenge_event"
+
     fun createChannels(context: Context) {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        val pushChannel = NotificationChannel(
-            CHANNEL_PUSH,
-            "Push Notifications",
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = "Real-time notifications from Union Manager"
-        }
-        manager.createNotificationChannel(pushChannel)
-
-        val alertsChannel = NotificationChannel(
-            CHANNEL_ALERTS,
-            "Alerts",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "Critical alerts and incidents"
-        }
-        manager.createNotificationChannel(alertsChannel)
+        com.jlucraft.console.data.push.NotificationChannelRegistry.createChannels(context)
     }
 
-    fun show(context: Context, title: String, body: String, channelId: String = CHANNEL_PUSH) {
+    /**
+     * Show a notification.
+     *
+     * @param context       Android context
+     * @param title         Notification title
+     * @param body          Notification body text
+     * @param channelId     Notification channel
+     * @param intentAction  Optional custom action for deep-linking (e.g. "ACTION_AUTH_CHALLENGE")
+     */
+    fun show(
+        context: Context,
+        title: String,
+        body: String,
+        channelId: String = CHANNEL_PUSH,
+        intentAction: String? = null
+    ) {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (intentAction != null) {
+                action = intentAction
+                putExtra(EXTRA_AUTH_CHALLENGE_EVENT, true)
+            }
         }
         val pendingIntent = PendingIntent.getActivity(
             context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val priority = when (channelId) {
+            CHANNEL_AUTH_CHALLENGE -> NotificationCompat.PRIORITY_MAX
+            CHANNEL_ALERTS -> NotificationCompat.PRIORITY_HIGH
+            else -> NotificationCompat.PRIORITY_DEFAULT
+        }
+
         val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(body)
-            .setPriority(if (channelId == CHANNEL_ALERTS) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(priority)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            .setCategory(
+                if (channelId == CHANNEL_AUTH_CHALLENGE) NotificationCompat.CATEGORY_ALARM
+                else NotificationCompat.CATEGORY_EVENT
+            )
             .build()
 
         try {

@@ -13,41 +13,53 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.jlucraft.console.data.model.Device
-import com.jlucraft.console.data.model.toShortDate
-import com.jlucraft.console.data.model.truncate
+import com.jlucraft.console.app.AppServices
+import com.jlucraft.console.data.local.SettingsStore
+import com.jlucraft.console.ui.navigation.AppRoute
 import com.jlucraft.console.ui.screens.audit.AuditLogScreen
+import com.jlucraft.console.ui.screens.oracle.OracleProofPanel
 import com.jlucraft.console.ui.theme.StatusGreen
+import com.jlucraft.console.viewmodel.OracleViewModel
 import com.jlucraft.console.viewmodel.SettingsViewModel
-import com.jlucraft.console.viewmodel.ViewModelFactory
+
+private val pushEventTypeOptions = listOf(
+    "ProposalCreated" to "提案创建",
+    "ProposalExecuted" to "提案执行",
+    "InstanceMigrated" to "实例迁移",
+    "TournamentCreated" to "赛事创建",
+    "MatchResult" to "比赛结果",
+    "AuthChallenge" to "认证挑战 (强制)",
+    "InstanceCrash" to "实例崩溃 (强制)"
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = ViewModelFactory())) {
+fun SettingsScreen(
+    services: AppServices,
+    viewModel: SettingsViewModel = viewModel(),
+    onNavigate: ((AppRoute) -> Unit)? = null,
+) {
     val state = viewModel.uiState.value
-    var serverUrl by rememberSaveable { mutableStateOf(state.serverUrl) }
     var showBiometricTest by rememberSaveable { mutableStateOf(false) }
     var showAuditLog by rememberSaveable { mutableStateOf(false) }
-    var showDeviceManagement by rememberSaveable { mutableStateOf(false) }
+    var showOracleProof by rememberSaveable { mutableStateOf(false) }
 
     when {
-        showAuditLog -> AuditLogSubScreen(onBack = { showAuditLog = false })
-        showDeviceManagement -> DeviceManagementSubScreen(
-            viewModel = viewModel,
-            onBack = { showDeviceManagement = false }
+        showAuditLog -> AuditLogSubScreen(services = services, onBack = { showAuditLog = false })
+        showOracleProof -> OracleProofSubScreen(
+            services = services,
+            onBack = { showOracleProof = false }
         )
         else -> SettingsListScreen(
             state = state,
-            serverUrl = serverUrl,
-            onServerUrlChange = { serverUrl = it },
-            onSaveServerUrl = { viewModel.setServerUrl(serverUrl) },
+            viewModel = viewModel,
             onShowBiometricTest = { showBiometricTest = true },
             onShowAuditLog = { showAuditLog = true },
-            onShowDeviceManagement = { showDeviceManagement = true },
-            onClearBiometricResult = { viewModel.clearBiometricResult() }
+            onShowOracleProof = { showOracleProof = true },
+            onClearBiometricResult = { viewModel.clearBiometricResult() },
+            onNavigate = onNavigate,
         )
     }
 
@@ -59,17 +71,25 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = ViewModelF
     }
 }
 
+private data class DistributorInfo(val headline: String, val supporting: String)
+
+private fun distributorInfoFrom(raw: String): DistributorInfo = when {
+    raw.startsWith("Embedded") -> DistributorInfo("推送服务：内置兜底", "应用内置 FCM 分发器 · 自动兜底")
+    raw == "检测中..." -> DistributorInfo("推送服务：检测中...", "正在检测可用推送分发器")
+    raw == "未安装" || raw == "未选择" -> DistributorInfo("推送暂不可用，将在可用时自动重试", "建议安装任一 UnifiedPush 分发器（如 ntfy）以启用推送")
+    else -> DistributorInfo("推送服务：UnifiedPush", "外部 UnifiedPush 分发器 · $raw")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsListScreen(
     state: com.jlucraft.console.viewmodel.SettingsUiState,
-    serverUrl: String,
-    onServerUrlChange: (String) -> Unit,
-    onSaveServerUrl: () -> Unit,
+    viewModel: SettingsViewModel,
     onShowBiometricTest: () -> Unit,
     onShowAuditLog: () -> Unit,
-    onShowDeviceManagement: () -> Unit,
-    onClearBiometricResult: () -> Unit
+    onShowOracleProof: () -> Unit,
+    onClearBiometricResult: () -> Unit,
+    onNavigate: ((AppRoute) -> Unit)? = null,
 ) {
     Scaffold(
         topBar = {
@@ -90,35 +110,10 @@ private fun SettingsListScreen(
         ) {
             item {
                 Text(
-                    text = "节点连接",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = serverUrl,
-                    onValueChange = onServerUrlChange,
-                    label = { Text("服务器地址") },
-                    placeholder = { Text("http://10.0.2.2:8080") },
-                        leadingIcon = { Icon(Icons.Default.Link, contentDescription = "链接") },
-                    trailingIcon = {
-                        IconButton(onClick = onSaveServerUrl) {
-                            Icon(Icons.Default.Save, contentDescription = "保存")
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            item {
-                Text(
                     text = "管理",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                 )
             }
 
@@ -142,12 +137,100 @@ private fun SettingsListScreen(
                         leadingContent = { Icon(Icons.Default.Devices, contentDescription = "设备") },
                         supportingContent = { Text("查看和管理已注册设备，吊销丢失或被盗设备") },
                         trailingContent = {
-                            IconButton(onClick = onShowDeviceManagement) {
+                            IconButton(onClick = {
+                                if (onNavigate != null) onNavigate(AppRoute.Devices)
+                            }) {
                                 Icon(Icons.Default.ChevronRight, contentDescription = "查看")
                         }
                     }
                 )
                 HorizontalDivider()
+            }
+
+            item {
+                ListItem(
+                    headlineContent = { Text("预言机证明验证") },
+                        leadingContent = { Icon(Icons.Default.VerifiedUser, contentDescription = "预言机") },
+                        supportingContent = { Text("查询玩家分数并验证 Merkle 证明") },
+                        trailingContent = {
+                            IconButton(onClick = onShowOracleProof) {
+                                Icon(Icons.Default.ChevronRight, contentDescription = "查看")
+                        }
+                    }
+                )
+                HorizontalDivider()
+            }
+
+            if (onNavigate != null) {
+                item {
+                    ListItem(
+                        headlineContent = { Text("赛季管理") },
+                        leadingContent = { Icon(Icons.Default.EmojiEvents, contentDescription = "赛季") },
+                        supportingContent = { Text("赛季生命周期、排名与存档状态") },
+                        trailingContent = {
+                            IconButton(onClick = { onNavigate(AppRoute.Season) }) {
+                                Icon(Icons.Default.ChevronRight, contentDescription = "查看")
+                            }
+                        }
+                    )
+                    HorizontalDivider()
+                }
+
+                item {
+                    ListItem(
+                        headlineContent = { Text("系统告警") },
+                        leadingContent = { Icon(Icons.Default.Warning, contentDescription = "告警") },
+                        supportingContent = { Text("告警列表、严重度筛选与确认") },
+                        trailingContent = {
+                            IconButton(onClick = { onNavigate(AppRoute.Alerts) }) {
+                                Icon(Icons.Default.ChevronRight, contentDescription = "查看")
+                            }
+                        }
+                    )
+                    HorizontalDivider()
+                }
+
+                item {
+                    ListItem(
+                        headlineContent = { Text("节点信誉评分") },
+                        leadingContent = { Icon(Icons.Default.Star, contentDescription = "节点") },
+                        supportingContent = { Text("节点评分/声誉排行榜与健康摘要") },
+                        trailingContent = {
+                            IconButton(onClick = { onNavigate(AppRoute.NodeScores) }) {
+                                Icon(Icons.Default.ChevronRight, contentDescription = "查看")
+                            }
+                        }
+                    )
+                    HorizontalDivider()
+                }
+
+                item {
+                    ListItem(
+                        headlineContent = { Text("DID 解析") },
+                        leadingContent = { Icon(Icons.Default.Fingerprint, contentDescription = "DID") },
+                        supportingContent = { Text("解析 DID 文档并显示结构化元数据") },
+                        trailingContent = {
+                            IconButton(onClick = { onNavigate(AppRoute.DidResolution) }) {
+                                Icon(Icons.Default.ChevronRight, contentDescription = "查看")
+                            }
+                        }
+                    )
+                    HorizontalDivider()
+                }
+
+                item {
+                    ListItem(
+                        headlineContent = { Text("调度策略") },
+                        leadingContent = { Icon(Icons.Default.Schedule, contentDescription = "调度") },
+                        supportingContent = { Text("查看、模拟和应用实例调度约束") },
+                        trailingContent = {
+                            IconButton(onClick = { onNavigate(AppRoute.Scheduling) }) {
+                                Icon(Icons.Default.ChevronRight, contentDescription = "查看")
+                            }
+                        }
+                    )
+                    HorizontalDivider()
+                }
             }
 
             item {
@@ -202,37 +285,147 @@ private fun SettingsListScreen(
             }
 
             item {
+                val info = distributorInfoFrom(state.distributorInfo)
                 ListItem(
-                    headlineContent = { Text(state.distributorInfo) },
-                        leadingContent = { Icon(Icons.Default.Notifications, contentDescription = "推送") },
-                    supportingContent = {
-                        val statusText = when {
-                            state.distributorInfo.startsWith("Embedded") -> "兜底方案 · 应用内置 FCM 分发器"
-                            state.distributorInfo == "未安装" -> "未检测到推送分发器"
-                            state.distributorInfo == "未选择" -> "请在系统中选择推送分发器"
-                            else -> "外部分发器 · 由系统提供"
-                        }
-                        Text(statusText)
+                    headlineContent = { Text(info.headline) },
+                    leadingContent = { Icon(Icons.Default.Notifications, contentDescription = "推送") },
+                    supportingContent = { Text(info.supporting) }
+                )
+                HorizontalDivider()
+            }
+
+            // ── Onboarding ──────────────────────────────────────
+
+            item {
+                Text(
+                    text = "设备状态",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                ListItem(
+                    headlineContent = {
+                        Text(state.teeCapability)
                     },
-                    trailingContent = {
-                        val badge = if (state.distributorInfo.startsWith("Embedded")) "FCM" else if (state.distributorInfo != "检测中..." && state.distributorInfo != "未安装" && state.distributorInfo != "未选择") "外部" else ""
-                        if (badge.isNotEmpty()) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                shape = MaterialTheme.shapes.small
-                            ) {
-                                Text(
-                                    text = badge,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
+                    leadingContent = {
+                        Icon(
+                            if (state.teeCapability.startsWith("无硬件安全能力")) Icons.Default.RemoveCircle else Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = if (state.teeCapability.startsWith("无硬件安全能力")) MaterialTheme.colorScheme.error else StatusGreen
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            if (state.teeCapability.startsWith("无硬件安全能力"))
+                                "设备未提供可用的硬件安全 Ed25519 密钥，需更换满足要求的设备。"
+                            else
+                                "设备支持硬件安全 Ed25519 签名，可执行完整管理操作。"
+                        )
                     }
                 )
                 HorizontalDivider()
             }
+
+            // ── Push preferences ────────────────────────────────
+
+            item {
+                Text(
+                    text = "推送偏好",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                val pushState = state
+                // DND section
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("勿扰时段", style = MaterialTheme.typography.titleSmall)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("启用勿扰模式")
+                            Spacer(modifier = Modifier.weight(1f))
+                            Switch(
+                                checked = pushState.dndEnabled,
+                                onCheckedChange = { viewModel.setDndEnabled(it) }
+                            )
+                        }
+                        if (pushState.dndEnabled) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("静音时段: ${pushState.dndStartHour}:00 - ${pushState.dndEndHour}:00",
+                                style = MaterialTheme.typography.bodySmall)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("开始", style = MaterialTheme.typography.labelSmall)
+                                Slider(
+                                    value = pushState.dndStartHour.toFloat(),
+                                    onValueChange = { viewModel.setDndStartHour(it.toInt()) },
+                                    valueRange = 0f..23f,
+                                    steps = 22,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text("${pushState.dndStartHour}h", style = MaterialTheme.typography.labelSmall)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("结束", style = MaterialTheme.typography.labelSmall)
+                                Slider(
+                                    value = pushState.dndEndHour.toFloat(),
+                                    onValueChange = { viewModel.setDndEndHour(it.toInt()) },
+                                    valueRange = 0f..23f,
+                                    steps = 22,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text("${pushState.dndEndHour}h", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "事件类型",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+
+            items(pushEventTypeOptions) { (eventType, label) ->
+                val isForced = SettingsStore.FORCE_ENABLED_EVENT_TYPES.contains(eventType)
+                val isEnabled = state.pushEnabledEventTypes.contains(eventType)
+                ListItem(
+                    headlineContent = { Text(label) },
+                    supportingContent = {
+                        if (isForced) {
+                            Text("始终启用", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary)
+                        }
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = isEnabled,
+                            onCheckedChange = { viewModel.togglePushEventType(eventType) },
+                            enabled = !isForced
+                        )
+                    }
+                )
+                HorizontalDivider()
+            }
+
+            // ── About ────────────────────────────────────────────
 
             item {
                 Text(
@@ -250,28 +443,26 @@ private fun SettingsListScreen(
                     supportingContent = { Text("v0.1.0 · JLUCraft 管理终端") }
                 )
             }
+        }
+    }
 
-            if (state.biometricResult != null) {
-                item {
-                    AlertDialog(
-                        onDismissRequest = onClearBiometricResult,
-                        title = { Text("生物认证") },
-                        text = { Text(state.biometricResult) },
-                        confirmButton = {
-                            TextButton(onClick = onClearBiometricResult) {
-                                Text("确定")
-                            }
-                        }
-                    )
+    if (state.biometricResult != null) {
+        AlertDialog(
+            onDismissRequest = onClearBiometricResult,
+            title = { Text("生物认证") },
+            text = { Text(state.biometricResult) },
+            confirmButton = {
+                TextButton(onClick = onClearBiometricResult) {
+                    Text("确定")
                 }
             }
-        }
+        )
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AuditLogSubScreen(onBack: () -> Unit) {
+private fun AuditLogSubScreen(services: AppServices, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -288,290 +479,44 @@ private fun AuditLogSubScreen(onBack: () -> Unit) {
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
-            AuditLogScreen()
+            AuditLogScreen(services = services)
         }
     }
 }
 
+
+// ── Oracle Proof Sub-Screen ─────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DeviceManagementSubScreen(
-    viewModel: SettingsViewModel = viewModel(factory = ViewModelFactory()),
+private fun OracleProofSubScreen(
+    services: AppServices,
     onBack: () -> Unit
 ) {
-    val state = viewModel.uiState.value
-    var showRevokeDialog by rememberSaveable { mutableStateOf<String?>(null) }
-    var showEmergencyRevokeDialog by rememberSaveable { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(Unit) {
-        viewModel.loadDevices()
-    }
+    val oracleViewModel: OracleViewModel = viewModel()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("设备管理") },
+                title = { Text("预言机证明验证") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回"
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
-                ),
-                actions = {
-                    IconButton(onClick = { viewModel.loadDevices() }) {
-                        if (state.devicesLoading) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Default.Refresh, contentDescription = "刷新")
-                        }
-                    }
-                }
+                )
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            item {
-                Text(
-                    text = "已注册设备",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                )
-            }
-
-            if (state.devicesError != null) {
-                item {
-                    Text(
-                        text = "加载失败: ${state.devicesError}",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(vertical = 16.dp)
-                    )
-                }
-            }
-
-            if (state.devices.isEmpty() && !state.devicesLoading && state.devicesError == null) {
-                item {
-                    Text(
-                        text = "暂无设备记录",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 16.dp)
-                    )
-                }
-            }
-
-            items(state.devices, key = { it.pubkey }) { device ->
-                DeviceCard(
-                    device = device,
-                    currentPubkey = viewModel.teeAuth.getPublicKey(),
-                    onRevoke = { showRevokeDialog = device.pubkey },
-                    onEmergencyRevoke = { showEmergencyRevokeDialog = device.pubkey }
-                )
-            }
-        }
-    }
-
-    if (state.revokeSuccess != null) {
-        LaunchedEffect(state.revokeSuccess) {
-            viewModel.clearRevokeSuccess()
-        }
-    }
-
-    showRevokeDialog?.let { pubkey ->
-        RevokeDeviceDialog(
-            title = "吊销设备",
-            description = "吊销后该设备将无法再用于管理操作。此操作不可撤销。",
-            onDismiss = { showRevokeDialog = null },
-            onConfirm = { reason ->
-                viewModel.revokeDevice(pubkey, reason)
-                showRevokeDialog = null
-            }
-        )
-    }
-
-    showEmergencyRevokeDialog?.let { pubkey ->
-        RevokeDeviceDialog(
-            title = "紧急吊销设备",
-            description = "紧急吊销仅需当事人签名即可生效，用于设备已确认在攻击者手中的情况。此操作不可撤销。",
-            onDismiss = { showEmergencyRevokeDialog = null },
-            onConfirm = { reason ->
-                viewModel.emergencyRevokeDevice(pubkey, reason)
-                showEmergencyRevokeDialog = null
-            }
-        )
-    }
-}
-
-@Composable
-private fun DeviceCard(
-    device: Device,
-    currentPubkey: String,
-    onRevoke: () -> Unit,
-    onEmergencyRevoke: () -> Unit
-) {
-    val isCurrentDevice = device.pubkey == currentPubkey
-    val isRevoked = device.status == "revoked"
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isRevoked) {
-                MaterialTheme.colorScheme.error.copy(alpha = 0.05f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
-            }
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = device.platform,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    if (isCurrentDevice) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            shape = MaterialTheme.shapes.small
-                        ) {
-                            Text(
-                                text = "本机",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
-                Surface(
-                    color = if (isRevoked) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Text(
-                        text = if (isRevoked) "已吊销" else "正常",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isRevoked) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "公钥: ${device.pubkey.truncate(32)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        Box(modifier = Modifier.padding(padding)) {
+            OracleProofPanel(
+                viewModel = oracleViewModel,
+                onDismiss = onBack
             )
-            Text(
-                text = "注册时间: ${device.createdAt.toShortDate()}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (device.lastSeenAt != null) {
-                Text(
-                    text = "最后在线: ${device.lastSeenAt.toShortDate()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (isRevoked) {
-                Text(
-                    text = "吊销时间: ${device.revokedAt?.toShortDate() ?: "未知"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-                if (device.revokedReason != null) {
-                    Text(
-                        text = "原因: ${device.revokedReason}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            if (!isRevoked) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onRevoke,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text("吊销")
-                    }
-                    OutlinedButton(
-                        onClick = onEmergencyRevoke,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text("紧急吊销")
-                    }
-                }
-            }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun RevokeDeviceDialog(
-    title: String,
-    description: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
-) {
-    var reason by rememberSaveable { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(description, style = MaterialTheme.typography.bodyMedium)
-                OutlinedTextField(
-                    value = reason,
-                    onValueChange = { reason = it },
-                    label = { Text("吊销原因") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(reason) },
-                enabled = reason.isNotBlank()
-            ) {
-                Text("确认吊销", color = MaterialTheme.colorScheme.error)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
 }

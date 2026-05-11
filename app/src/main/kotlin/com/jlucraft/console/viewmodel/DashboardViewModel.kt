@@ -9,10 +9,13 @@ import com.jlucraft.console.data.model.Instance
 import com.jlucraft.console.data.model.NodeScore
 import com.jlucraft.console.data.remote.ClusterHealthResponse
 import com.jlucraft.console.data.remote.NetworkSnapshot
+import com.jlucraft.console.data.remote.PushService
+import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 import com.jlucraft.console.data.repository.NodeRepository
-import com.jlucraft.console.di.ServiceLocator
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 data class DashboardUiState(
     val isLoading: Boolean = false,
@@ -24,8 +27,11 @@ data class DashboardUiState(
     val error: String? = null
 )
 
-class DashboardViewModel(
-    private val repository: NodeRepository
+@HiltViewModel
+class DashboardViewModel @Inject constructor(
+    private val client: Libp2pClient,
+    private val repository: NodeRepository,
+    pushService: PushService,
 ) : ViewModel() {
 
     private val _uiState = mutableStateOf(DashboardUiState())
@@ -34,7 +40,7 @@ class DashboardViewModel(
     init {
         refresh()
         viewModelScope.launch {
-            ServiceLocator.pushService.events.collect { event ->
+            pushService.events.collect { event ->
                 when (event.type) {
                     "cluster_health", "alerts", "proposals" -> refresh()
                 }
@@ -49,8 +55,8 @@ class DashboardViewModel(
             val healthDeferred = async { repository.getClusterHealth() }
             val networkDeferred = async { repository.getNetworkSnapshot() }
             val scoresDeferred = async { repository.listNodeScores() }
-            val instancesDeferred = async { repository.getInstances() }
-            val alertsDeferred = async { repository.listAlerts(includeResolved = false) }
+            val instancesDeferred = async { client.getInstances() }
+            val alertsDeferred = async { client.listAlerts(includeResolved = false) }
 
             val healthResult = healthDeferred.await()
             val networkResult = networkDeferred.await()

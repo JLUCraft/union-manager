@@ -6,26 +6,36 @@ import org.unifiedpush.android.embedded_fcm_distributor.Gateway
 /**
  * Embedded FCM distributor for UnifiedPush.
  *
- * This distributor is bundled inside the union-manager app and acts as the
- * fallback when no external UnifiedPush distributor (ntfy, NextPush, Gotify)
- * is installed on the device.
+ * Acts as the fallback when no external UnifiedPush distributor
+ * (ntfy, NextPush, Gotify) is installed on the device.
  *
- * It uses Google FCM under the hood but exposes the UnifiedPush protocol,
- * so the app never directly depends on Google Firebase APIs.
+ * VAPID public key is resolved at runtime from the server's consensus push config,
+ * persisted locally via [com.jlucraft.console.data.local.PushRuntimeConfigStore].
  */
-class UnionEmbeddedDistributor : EmbeddedDistributorReceiver() {
+public open class UnionEmbeddedDistributor : EmbeddedDistributorReceiver() {
 
-    /**
-     * Use the default Google FCM gateway.
-     * The endpoint format is: https://fcm.googleapis.com/fcm/send/{token}
-     *
-     * If the federated-server needs a custom gateway, override this.
-     */
     override val gateway = object : Gateway {
-        override val vapid: String = ""
+        /**
+         * VAPID public key is populated at runtime from the server's consensus push config.
+         * The key is set by [PushRuntimeConfigHolder] before the distributor is used.
+         */
+        override val vapid: String
+            get() = PushRuntimeConfigHolder.vapidPublicKey ?: ""
 
         override fun getEndpoint(token: String): String {
             return "https://fcm.googleapis.com/fcm/send/$token"
         }
     }
+}
+
+/**
+ * Thread-safe holder for the runtime VAPID public key.
+ *
+ * This is a simple static holder because [UnionEmbeddedDistributor.gateway]
+ * is instantiated by the UnifiedPush framework and cannot receive constructor
+ * injection. The key is set before UnifiedPush registration.
+ */
+object PushRuntimeConfigHolder {
+    @Volatile
+    var vapidPublicKey: String? = null
 }

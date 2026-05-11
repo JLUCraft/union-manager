@@ -3,6 +3,7 @@ package com.jlucraft.console.data.auth
 import com.jlucraft.console.data.remote.ApiService
 import com.jlucraft.console.data.remote.AuthChallenge
 import com.jlucraft.console.data.remote.AuthResult
+import com.jlucraft.console.data.remote.SignResponse
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -33,19 +34,39 @@ class AuthCoordinatorTest {
         api = mockk(relaxed = true)
         teeAuth = mockk(relaxed = true)
         biometricAuth = mockk(relaxed = true)
+        every { teeAuth.isTeeBacked } returns true
         coordinator = AuthCoordinator(api, teeAuth, biometricAuth)
     }
+
+    private fun challenge(
+        nonce: String = "nonce123",
+        challengeId: String = "challenge-123",
+        payloadHash: String = "hash123",
+        cmdType: String = "test-cmd",
+        expiresAt: String = "2099-01-01T00:05:00Z"
+    ) = AuthChallenge(
+        challenge_id = challengeId,
+        nonce = nonce,
+        issued_at = "2099-01-01T00:00:00Z",
+        expires_at = expiresAt,
+        ttl_seconds = 300L,
+        cmd_type = cmdType,
+        payload_hash = payloadHash,
+        human_summary = "$cmdType operation",
+        risk_level = "low",
+        required_role = "admin"
+    )
 
     @Test
     fun `test_auth_headers_set_after_success`() = runTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
         coEvery { api.requestChallenge(any()) } returns Result.success(
-            AuthChallenge("nonce123", 1234567890L, "hash123", 300L)
+            challenge()
         )
         every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
         coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
-        every { api.setAuthHeaders(any(), any()) } just Runs
+        every { api.setAuthHeaders(any(), any(), any()) } just Runs
 
         val result = coordinator.authenticateForOperation(
             "test-cmd",
@@ -53,7 +74,7 @@ class AuthCoordinatorTest {
         )
 
         assertTrue(result.isSuccess)
-        verify { api.setAuthHeaders("nonce123", "AQID") }
+        verify { api.setAuthHeaders("nonce123", "AQID", "challenge-123") }
     }
 
     @Test
@@ -70,11 +91,11 @@ class AuthCoordinatorTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
         coEvery { api.requestChallenge(any()) } returns Result.success(
-            AuthChallenge("nonce123", 1234567890L, "hash123", 300L)
+            challenge()
         )
         every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
         coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
-        every { api.setAuthHeaders(any(), any()) } just Runs
+        every { api.setAuthHeaders(any(), any(), any()) } just Runs
         every { api.clearAuthHeaders() } just Runs
 
         var blockRan = false
@@ -97,11 +118,11 @@ class AuthCoordinatorTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
         coEvery { api.requestChallenge(any()) } returns Result.success(
-            AuthChallenge("nonce123", 1234567890L, "hash123", 300L)
+            challenge()
         )
         every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
         coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
-        every { api.setAuthHeaders(any(), any()) } just Runs
+        every { api.setAuthHeaders(any(), any(), any()) } just Runs
         every { api.clearAuthHeaders() } just Runs
 
         val result = coordinator.withAuthenticatedOperation(
@@ -120,11 +141,11 @@ class AuthCoordinatorTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
         coEvery { api.requestChallenge(any()) } returns Result.success(
-            AuthChallenge("nonce123", 1234567890L, "hash123", 300L)
+            challenge()
         )
         every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
         coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
-        every { api.setAuthHeaders(any(), any()) } just Runs
+        every { api.setAuthHeaders(any(), any(), any()) } just Runs
 
         coordinator.authenticateForOperation(
             "test-cmd",
@@ -133,6 +154,61 @@ class AuthCoordinatorTest {
 
         coVerify { api.requestChallenge(any()) }
         coVerify { api.verifySignature(any()) }
+    }
+
+    @Test
+    fun `test_authenticateForOperation_sends_subject_did_and_canonical_challenge_fields`() = runTest {
+        every { teeAuth.tryGetPublicKey() } returns Result.success("device-public-key")
+        coordinator.registerLocalIdentity("did:key:zAlice", "admin", "Alice")
+        coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
+        every { teeAuth.getPublicKey() } returns "device-public-key"
+        coEvery {
+            api.requestChallenge(any())
+        } returns Result.success(
+            challenge(
+                nonce = "nonce-42",
+                challengeId = "challenge-42",
+                payloadHash = "payload-42",
+                cmdType = "stop-instance"
+            ).copy(risk_level = "medium", required_role = "admin")
+        )
+        every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
+        coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
+        every { api.setAuthHeaders(any(), any(), any()) } just Runs
+
+        val result = coordinator.authenticateForOperation(
+            "stop-instance",
+            buildJsonObject { put("instance_id", "inst-1") }
+        )
+
+        assertTrue(result.isSuccess)
+        coVerify {
+            api.verifySignature(withArg<SignResponse> { response ->
+                assertEquals("challenge-42", response.challenge_id)
+                assertEquals("nonce-42", response.nonce)
+                assertEquals("did:key:zAlice", response.subject_did)
+                assertEquals("Ed25519", response.signature_alg)
+            })
+        }
+    }
+
+    @Test
+    fun `test_authenticateForOperation_rejects_when_server_required_role_exceeds_local_role`() = runTest {
+        every { teeAuth.tryGetPublicKey() } returns Result.success("device-public-key")
+        coordinator.registerLocalIdentity("did:key:zBob", "member", "Bob")
+        coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
+        every { teeAuth.getPublicKey() } returns "device-public-key"
+        coEvery { api.requestChallenge(any()) } returns Result.success(
+            challenge(cmdType = "stop-instance").copy(required_role = "admin", risk_level = "medium")
+        )
+
+        val result = coordinator.authenticateForOperation(
+            "stop-instance",
+            buildJsonObject { put("instance_id", "inst-1") }
+        )
+
+        assertTrue(result.isFailure)
+        coVerify(exactly = 0) { api.verifySignature(any()) }
     }
 
     @Test
@@ -166,7 +242,7 @@ class AuthCoordinatorTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
         coEvery { api.requestChallenge(any()) } returns Result.success(
-            AuthChallenge("nonce123", 1234567890L, "hash123", 300L)
+            challenge()
         )
         every { teeAuth.sign(any()) } throws IllegalStateException("sign failed")
 
@@ -183,7 +259,7 @@ class AuthCoordinatorTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
         coEvery { api.requestChallenge(any()) } returns Result.success(
-            AuthChallenge("nonce123", 1234567890L, "hash123", 300L)
+            challenge()
         )
         every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
         coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(false, "denied"))

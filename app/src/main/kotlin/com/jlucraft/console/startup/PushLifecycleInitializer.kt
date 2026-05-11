@@ -1,54 +1,73 @@
 package com.jlucraft.console.startup
 
 import android.content.Context
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ProcessLifecycleOwner
+import android.util.Log
 import androidx.startup.Initializer
-import com.jlucraft.console.di.ServiceLocator
+import com.jlucraft.console.app.di.HiltServicesAccessor
+import com.jlucraft.console.data.local.PushRuntimeConfigStore
 import com.jlucraft.console.data.remote.NotificationHelper
+import com.jlucraft.console.data.remote.PushConfigService
+import com.jlucraft.console.data.remote.PushRuntimeConfigHolder
+import com.jlucraft.console.data.push.PushPolicyInitializer
+import com.jlucraft.console.data.remote.UnifiedPushRegistrar
 import com.jlucraft.console.data.remote.UnionPushReceiver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import org.unifiedpush.android.connector.UnifiedPush
 
 class PushLifecycleInitializer : Initializer<Unit> {
 
+    private companion object {
+        private const val TAG = "PushLifecycleInitializer"
+    }
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    @Suppress("DEPRECATION")
     override fun create(context: Context) {
+        val services = HiltServicesAccessor.appServices(context.applicationContext)
         NotificationHelper.createChannels(context)
+        PushPolicyInitializer.initialize(services.settingsStore)
 
-        // Register with UnifiedPush (uses embedded FCM distributor as fallback)
-        UnifiedPush.tryUseCurrentOrDefaultDistributor(context) { success ->
-            if (success) {
-                UnifiedPush.register(context)
-            }
-        }
+        val configStore = PushRuntimeConfigStore(context)
+        val configService = PushConfigService(services.client, configStore)
 
-        // Listen for endpoint changes and report to server
         scope.launch {
+            // 1. Ensure push config (VAPID public key) from server before registration
+            configService.ensurePushConfig()
+
+            // 2. Load VAPID key into runtime holder for embedded FCM distributor
+            val vapidKey = configStore.getVapidPublicKey()
+            if (vapidKey != null) {
+                PushRuntimeConfigHolder.vapidPublicKey = vapidKey
+            }
+
+            // 3. Register with UnifiedPush (auto-select distributor)
+            UnifiedPushRegistrar.register(context)
+
+            // 4. Listen for endpoint changes and report to server
             UnionPushReceiver.endpointFlow.collect { endpoint ->
                 if (endpoint.isNotBlank()) {
-                    ServiceLocator.apiService.registerPushEndpoint(endpoint)
+                    val devicePubkey = try {
+                        services.teeAuthManager.getPublicKey()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Push endpoint registration requires a device public key", e)
+                        return@collect
+                    }
+                    services.client.registerPushEndpoint(
+                        endpoint = endpoint,
+                        devicePubkey = devicePubkey,
+                    )
                 }
             }
         }
 
-        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) {
-                ServiceLocator.pushService.connect()
-            }
+        // PushService is event-bus only now; start collecting
+        services.pushService.connect()
 
-            override fun onStop(owner: LifecycleOwner) {
-                ServiceLocator.pushService.disconnect()
-            }
-        })
+        // If the app is killed, Android delivers UnifiedPush messages
+        // via broadcast receivers regardless of foreground/background state.
     }
 
-    override fun dependencies(): List<Class<out Initializer<*>>> =
-        listOf(ServiceLocatorInitializer::class.java)
+    override fun dependencies(): List<Class<out Initializer<*>>> = emptyList()
 }

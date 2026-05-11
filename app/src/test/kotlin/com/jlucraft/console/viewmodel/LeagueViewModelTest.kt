@@ -1,19 +1,24 @@
 package com.jlucraft.console.viewmodel
 
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.auth.TeeAuthManager
 import com.jlucraft.console.data.model.Match
 import com.jlucraft.console.data.model.Team
+import com.jlucraft.console.data.model.MatchStatus
 import com.jlucraft.console.data.model.Tournament
+import com.jlucraft.console.data.model.TournamentStatus
+import com.jlucraft.console.data.remote.ApiService
 import com.jlucraft.console.data.remote.PushService
 import com.jlucraft.console.data.repository.NodeRepository
-import com.jlucraft.console.di.ServiceLocator
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.*
 import kotlinx.serialization.json.JsonObject
+import io.mockk.just
+import io.mockk.Runs
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -29,7 +34,10 @@ class LeagueViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var repository: NodeRepository
     private lateinit var teeAuth: TeeAuthManager
+    private lateinit var authCoordinator: AuthCoordinator
     private lateinit var pushEvents: MutableSharedFlow<PushService.WebSocketEvent>
+    private lateinit var pushService: PushService
+    private lateinit var apiService: ApiService
     private lateinit var viewModel: LeagueViewModel
 
     private val mockTournaments = listOf(
@@ -38,7 +46,7 @@ class LeagueViewModelTest {
             name = "Summer Cup",
             game_type = "MOBA",
             mode = "1v1",
-            status = "open",
+            status = TournamentStatus.Registration,
             max_participants = 32,
             min_member_score = 10,
             created_at = "2024-01-01T00:00:00Z",
@@ -49,7 +57,7 @@ class LeagueViewModelTest {
             name = "Winter League",
             game_type = "FPS",
             mode = "3v3",
-            status = "active",
+            status = TournamentStatus.Ongoing,
             max_participants = 64,
             min_member_score = 20,
             created_at = "2024-02-01T00:00:00Z",
@@ -63,7 +71,7 @@ class LeagueViewModelTest {
             tournament_id = "t-1",
             round = 1,
             participants = listOf("pk-1", "pk-2"),
-            status = "scheduled",
+            status = MatchStatus.Scheduled,
             scheduled_at = "2024-06-01T00:00:00Z"
         )
     )
@@ -82,20 +90,18 @@ class LeagueViewModelTest {
         Dispatchers.setMain(testDispatcher)
         repository = mockk()
         teeAuth = mockk()
+        authCoordinator = mockk(relaxed = true)
+        apiService = mockk(relaxed = true)
 
         pushEvents = MutableSharedFlow(replay = 0, extraBufferCapacity = 64)
-        val pushService = mockk<PushService>()
+        pushService = mockk()
         every { pushService.events } returns pushEvents
-
-        ServiceLocator.pushService = pushService
     }
 
     @After
     fun tearDown() {
         Dispatchers.resetMain()
         unmockkAll()
-
-        ServiceLocator.pushService = mockk()
     }
 
     private fun mockListTournaments(tournaments: List<Tournament> = mockTournaments) {
@@ -103,7 +109,7 @@ class LeagueViewModelTest {
     }
 
     private fun createViewModel() {
-        viewModel = LeagueViewModel(repository, teeAuth)
+        viewModel = LeagueViewModel(repository, teeAuth, authCoordinator, apiService, pushService)
     }
 
     private fun makeEvent(type: String) = PushService.WebSocketEvent(
@@ -346,5 +352,52 @@ class LeagueViewModelTest {
 
         assertFalse(viewModel.uiState.value.isLoading)
         assertNotNull(viewModel.uiState.value.error)
+    }
+
+    // ---------------------------------------------------------------
+    // 13. resolveDisputeViaProposal sends cmdType = "create-proposal"
+    // ---------------------------------------------------------------
+
+    @Test
+    fun resolveDisputeViaProposal_sends_correct_cmdType() = runTest {
+        mockListTournaments()
+        every { teeAuth.getPublicKey() } returns "test-pubkey"
+        coEvery {
+            authCoordinator.authenticateForOperation(
+                cmdType = "create-proposal",
+                payload = any(),
+                title = any(),
+                subtitle = any()
+            )
+        } returns Result.success(Unit)
+        coEvery { authCoordinator.clearAuth() } just Runs
+        coEvery { repository.listDisputes(any()) } returns Result.success(emptyList())
+        coEvery { apiService.createProposal(any(), any(), any()) } returns Result.success(
+            com.jlucraft.console.data.model.Proposal(
+                id = "prop-1",
+                proposalType = "dispute-resolve",
+                payload = JsonObject(emptyMap()),
+                proposer = "test-pubkey",
+                expiresAt = "2024-12-31T00:00:00Z",
+                signatures = emptyList(),
+                status = "pending",
+                createdAt = "2024-01-01T00:00:00Z"
+            )
+        )
+
+        createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.resolveDisputeViaProposal("d-1", "replay", "resolved")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            authCoordinator.authenticateForOperation(
+                cmdType = "create-proposal",
+                payload = any(),
+                title = any(),
+                subtitle = any()
+            )
+        }
     }
 }

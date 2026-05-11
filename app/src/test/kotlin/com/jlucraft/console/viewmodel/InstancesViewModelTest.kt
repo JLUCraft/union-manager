@@ -4,7 +4,6 @@ import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.model.Instance
 import com.jlucraft.console.data.remote.PushService
 import com.jlucraft.console.data.repository.NodeRepository
-import com.jlucraft.console.di.ServiceLocator
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -52,8 +51,6 @@ class InstancesViewModelTest {
         pushService = mockk()
         every { pushService.events } returns pushEvents
 
-        ServiceLocator.pushService = pushService
-
         coEvery { authCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns Result.success(Unit)
         every { authCoordinator.clearAuth() } just runs
 
@@ -66,12 +63,10 @@ class InstancesViewModelTest {
     fun tearDown() {
         Dispatchers.resetMain()
         unmockkAll()
-
-        ServiceLocator.pushService = mockk()
     }
 
     private fun createViewModel() {
-        viewModel = InstancesViewModel(repository, authCoordinator)
+        viewModel = InstancesViewModel(repository, authCoordinator, pushService)
     }
 
     private fun createInstance(
@@ -237,7 +232,7 @@ class InstancesViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         coVerify(exactly = 1) {
-            authCoordinator.authenticateForOperation("instance-start", any(), "启动实例", "请验证身份以启动实例")
+            authCoordinator.authenticateForOperation("start-instance", any(), "启动实例", "请验证身份以启动实例")
         }
         coVerify(exactly = 1) { repository.startInstance("inst-1") }
     }
@@ -254,7 +249,7 @@ class InstancesViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         coVerify(exactly = 1) {
-            authCoordinator.authenticateForOperation("instance-stop", any(), "停止实例", "请验证身份以停止实例")
+            authCoordinator.authenticateForOperation("stop-instance", any(), "停止实例", "请验证身份以停止实例")
         }
         coVerify(exactly = 1) { repository.stopInstance("inst-2") }
     }

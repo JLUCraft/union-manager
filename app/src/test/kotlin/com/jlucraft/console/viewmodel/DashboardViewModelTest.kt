@@ -8,10 +8,10 @@ import com.jlucraft.console.data.remote.ClusterHealthResponse
 import com.jlucraft.console.data.remote.NetworkSnapshot
 import com.jlucraft.console.data.remote.PushService
 import com.jlucraft.console.data.repository.NodeRepository
-import com.jlucraft.console.di.ServiceLocator
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.*
 import org.junit.After
@@ -29,6 +29,7 @@ class DashboardViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var mockRepository: NodeRepository
     private lateinit var pushEvents: MutableSharedFlow<PushService.WebSocketEvent>
+    private lateinit var pushService: PushService
 
     private val mockHealth = ClusterHealthResponse(
         status = "healthy",
@@ -81,9 +82,8 @@ class DashboardViewModelTest {
         Dispatchers.setMain(testDispatcher)
         mockRepository = mockk()
         pushEvents = MutableSharedFlow()
-        val mockPushService = mockk<PushService>()
-        every { mockPushService.events } returns pushEvents
-        ServiceLocator.pushService = mockPushService
+        pushService = mockk()
+        every { pushService.events } returns pushEvents
     }
 
     @After
@@ -100,7 +100,7 @@ class DashboardViewModelTest {
         coEvery { mockRepository.listAlerts(includeResolved = false) } returns Result.success(mockAlerts)
     }
 
-    private fun createViewModel(): DashboardViewModel = DashboardViewModel(mockRepository)
+    private fun createViewModel(): DashboardViewModel = DashboardViewModel(mockRepository, pushService)
 
     private fun makeEvent(type: String) = PushService.WebSocketEvent(
         type = type,
@@ -429,7 +429,7 @@ class DashboardViewModelTest {
         coEvery { mockRepository.getInstances() } returns Result.success(mockInstances)
         coEvery { mockRepository.listAlerts(includeResolved = false) } returns Result.success(mockAlerts)
 
-        val viewModel = DashboardViewModel(mockRepository)
+        val viewModel = DashboardViewModel(mockRepository, pushService)
         capturedViewModel = viewModel
 
         testDispatcher.scheduler.runCurrent()

@@ -3,11 +3,14 @@ package com.jlucraft.console.viewmodel
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.auth.TeeAuthManager
+import com.jlucraft.console.data.model.GovernanceEvent
+import com.jlucraft.console.data.model.GovernanceEventType
+import com.jlucraft.console.data.model.MemberSummary
 import com.jlucraft.console.data.model.Proposal
 import com.jlucraft.console.data.model.ProposalSignature
 import com.jlucraft.console.data.remote.ApiService
 import com.jlucraft.console.data.remote.PushService
-import com.jlucraft.console.di.ServiceLocator
+import com.jlucraft.console.data.repository.NodeRepository
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,7 +37,10 @@ class GovernanceViewModelTest {
     private lateinit var teeAuth: TeeAuthManager
     private lateinit var authCoordinator: AuthCoordinator
     private lateinit var pushEvents: MutableSharedFlow<PushService.WebSocketEvent>
+    private lateinit var pushService: PushService
+    private lateinit var nodeRepository: NodeRepository
     private lateinit var viewModel: GovernanceViewModel
+    private lateinit var governanceEvents: MutableSharedFlow<GovernanceEvent>
 
     private val mockProposals = listOf(
         Proposal(
@@ -70,26 +76,33 @@ class GovernanceViewModelTest {
         )
     )
 
+    private val mockMembers = listOf(
+        MemberSummary(
+            subjectDid = "did:member:1",
+            role = "member"
+        )
+    )
+
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         apiService = mockk()
         teeAuth = mockk()
         authCoordinator = mockk()
+        nodeRepository = mockk(relaxed = true)
+        governanceEvents = MutableSharedFlow(replay = 0, extraBufferCapacity = 8)
 
         pushEvents = MutableSharedFlow(replay = 0, extraBufferCapacity = 64)
-        val pushService = mockk<PushService>()
+        pushService = mockk()
         every { pushService.events } returns pushEvents
-
-        ServiceLocator.pushService = pushService
+        every { nodeRepository.observeGovernanceEvents() } returns governanceEvents
+        coEvery { nodeRepository.listMembers() } returns Result.success(mockMembers)
     }
 
     @After
     fun tearDown() {
         Dispatchers.resetMain()
         unmockkAll()
-
-        ServiceLocator.pushService = mockk()
     }
 
     private fun mockListProposals(proposals: List<Proposal> = mockProposals) {
@@ -97,12 +110,24 @@ class GovernanceViewModelTest {
     }
 
     private fun createViewModel() {
-        viewModel = GovernanceViewModel(apiService, teeAuth, authCoordinator)
+        viewModel = GovernanceViewModel(apiService, teeAuth, authCoordinator, nodeRepository, pushService)
     }
 
     private fun makeEvent(type: String) = PushService.WebSocketEvent(
         type = type,
         data = JsonObject(emptyMap())
+    )
+
+    private fun makeGovernanceEvent(
+        type: GovernanceEventType,
+        proposalId: String? = "proposal-1"
+    ) = GovernanceEvent(
+        eventId = "event-${type.name}",
+        eventType = type,
+        occurredAt = "2026-05-05T00:00:00Z",
+        proposalId = proposalId,
+        actorDid = "did:actor:1",
+        payload = buildJsonObject { put("status", JsonPrimitive("updated")) }
     )
 
     // ---------------------------------------------------------------
@@ -331,5 +356,35 @@ class GovernanceViewModelTest {
 
         assertFalse(viewModel.uiState.value.isLoading)
         assertNotNull(viewModel.uiState.value.error)
+    }
+
+    @Test
+    fun governance_stream_event_updates_status_and_last_event() {
+        mockListProposals()
+        createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        governanceEvents.tryEmit(makeGovernanceEvent(GovernanceEventType.PROPOSAL_CREATED))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(StreamStatus.CONNECTED, viewModel.uiState.value.streamStatus)
+        assertEquals("2026-05-05T00:00:00Z", viewModel.uiState.value.lastEventTime)
+        assertEquals(GovernanceEventType.PROPOSAL_CREATED, viewModel.uiState.value.lastEvent?.eventType)
+        coVerify(exactly = 2) { apiService.listProposals() }
+    }
+
+    @Test
+    fun member_update_event_refreshes_members_when_members_loaded() {
+        mockListProposals()
+        createViewModel()
+        viewModel.setActiveTab("members")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        governanceEvents.tryEmit(makeGovernanceEvent(GovernanceEventType.MEMBER_UPDATED, proposalId = null))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(StreamStatus.CONNECTED, viewModel.uiState.value.streamStatus)
+        assertEquals(mockMembers, viewModel.uiState.value.members)
+        coVerify(atLeast = 2) { nodeRepository.listMembers() }
     }
 }

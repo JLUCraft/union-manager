@@ -5,11 +5,11 @@ import com.jlucraft.console.data.model.AuditChainVerification
 import com.jlucraft.console.data.model.AuditEntry
 import com.jlucraft.console.data.remote.ApiService
 import com.jlucraft.console.data.remote.PushService
-import com.jlucraft.console.di.ServiceLocator
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.*
 import kotlinx.serialization.json.JsonObject
@@ -28,6 +28,7 @@ class AuditLogViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var apiService: ApiService
     private lateinit var pushEvents: MutableSharedFlow<PushService.WebSocketEvent>
+    private lateinit var pushService: PushService
     private lateinit var viewModel: AuditLogViewModel
 
     private val mockEntries = listOf(
@@ -61,12 +62,12 @@ class AuditLogViewModelTest {
 
     private val mockValidVerification = AuditChainVerification(
         valid = true,
-        brokenEntries = emptyList()
+        brokenCount = 0
     )
 
     private val mockInvalidVerification = AuditChainVerification(
         valid = false,
-        brokenEntries = listOf(3L)
+        brokenCount = 3
     )
 
     @Before
@@ -75,27 +76,24 @@ class AuditLogViewModelTest {
         apiService = mockk()
 
         pushEvents = MutableSharedFlow(replay = 0, extraBufferCapacity = 64)
-        val pushService = mockk<PushService>()
+        pushService = mockk()
         every { pushService.events } returns pushEvents
-
-        ServiceLocator.pushService = pushService
     }
 
     @After
     fun tearDown() {
         Dispatchers.resetMain()
         unmockkAll()
-
-        ServiceLocator.pushService = mockk()
     }
 
     private fun mockSuccess() {
         coEvery { apiService.listAuditEntries(limit = 100) } returns Result.success(mockEntries)
         coEvery { apiService.verifyAuditChain() } returns Result.success(mockValidVerification)
+        coEvery { apiService.getAuditAnomalies() } returns Result.success(emptyList())
     }
 
     private fun createViewModel() {
-        viewModel = AuditLogViewModel(apiService)
+        viewModel = AuditLogViewModel(apiService, pushService)
     }
 
     private fun makeEvent(type: String) = PushService.WebSocketEvent(
@@ -147,7 +145,7 @@ class AuditLogViewModelTest {
                 prevHash = "hash-2"
             )
         )
-        val updatedVerification = AuditChainVerification(valid = true, brokenEntries = emptyList())
+        val updatedVerification = AuditChainVerification(valid = true, brokenCount = 0)
 
         coEvery { apiService.listAuditEntries(limit = 100) } returns Result.success(updatedEntries)
         coEvery { apiService.verifyAuditChain() } returns Result.success(updatedVerification)
@@ -223,6 +221,7 @@ class AuditLogViewModelTest {
     fun error_state_is_handled() {
         coEvery { apiService.listAuditEntries(limit = 100) } returns Result.failure(Exception("Network error"))
         coEvery { apiService.verifyAuditChain() } returns Result.success(mockValidVerification)
+        coEvery { apiService.getAuditAnomalies() } returns Result.success(emptyList())
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -244,6 +243,7 @@ class AuditLogViewModelTest {
             Result.success(mockEntries)
         }
         coEvery { apiService.verifyAuditChain() } returns Result.success(mockValidVerification)
+        coEvery { apiService.getAuditAnomalies() } returns Result.success(emptyList())
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -255,6 +255,7 @@ class AuditLogViewModelTest {
     fun loading_state_is_false_after_error() {
         coEvery { apiService.listAuditEntries(limit = 100) } returns Result.failure(Exception("fail"))
         coEvery { apiService.verifyAuditChain() } returns Result.success(mockValidVerification)
+        coEvery { apiService.getAuditAnomalies() } returns Result.success(emptyList())
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -271,6 +272,7 @@ class AuditLogViewModelTest {
     fun empty_entries_list_is_handled() {
         coEvery { apiService.listAuditEntries(limit = 100) } returns Result.success(emptyList())
         coEvery { apiService.verifyAuditChain() } returns Result.success(mockValidVerification)
+        coEvery { apiService.getAuditAnomalies() } returns Result.success(emptyList())
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -287,13 +289,14 @@ class AuditLogViewModelTest {
     fun chain_verification_valid_shows_correct_state() {
         coEvery { apiService.listAuditEntries(limit = 100) } returns Result.success(mockEntries)
         coEvery { apiService.verifyAuditChain() } returns Result.success(mockValidVerification)
+        coEvery { apiService.getAuditAnomalies() } returns Result.success(emptyList())
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertNotNull(viewModel.uiState.value.chainVerification)
         assertTrue(viewModel.uiState.value.chainVerification!!.valid)
-        assertTrue(viewModel.uiState.value.chainVerification!!.brokenEntries.isEmpty())
+        assertTrue(viewModel.uiState.value.chainVerification!!.brokenCount == 0)
     }
 
     // ---------------------------------------------------------------
@@ -304,12 +307,13 @@ class AuditLogViewModelTest {
     fun chain_verification_invalid_shows_correct_state() {
         coEvery { apiService.listAuditEntries(limit = 100) } returns Result.success(mockEntries)
         coEvery { apiService.verifyAuditChain() } returns Result.success(mockInvalidVerification)
+        coEvery { apiService.getAuditAnomalies() } returns Result.success(emptyList())
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertNotNull(viewModel.uiState.value.chainVerification)
         assertFalse(viewModel.uiState.value.chainVerification!!.valid)
-        assertEquals(listOf(3L), viewModel.uiState.value.chainVerification!!.brokenEntries)
+        assertEquals(3, viewModel.uiState.value.chainVerification!!.brokenCount)
     }
 }

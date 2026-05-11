@@ -6,12 +6,13 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
+        android:name="com.jlucraft.console.app.ConsoleApplication"
         android:theme="@style/AppTheme.Splash"
         android:label="@string/app_name"
         android:allowBackup="false"
         android:supportsRtl="true">
         <activity
-            android:name=".ui.MainActivity"
+            android:name="com.jlucraft.console.ui.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -21,7 +22,7 @@
 
         <!-- UnifiedPush messaging receiver -->
         <receiver
-            android:name=".data.remote.UnionPushReceiver"
+            android:name="com.jlucraft.console.data.remote.UnionPushReceiver"
             android:exported="false"
             android:enabled="true">
             <intent-filter>
@@ -35,7 +36,7 @@
 
         <!-- UnifiedPush embedded FCM distributor -->
         <receiver
-            android:name=".data.remote.UnionEmbeddedDistributor"
+            android:name="com.jlucraft.console.data.remote.UnionEmbeddedDistributor"
             android:exported="false"
             android:enabled="true">
             <intent-filter>
@@ -47,7 +48,7 @@
 
         <!-- Re-register UnifiedPush after device reboot -->
         <receiver
-            android:name=".startup.PushBootReceiver"
+            android:name="com.jlucraft.console.startup.PushBootReceiver"
             android:exported="false"
             android:enabled="true">
             <intent-filter>
@@ -60,9 +61,6 @@
             android:authorities="${applicationId}.androidx-startup"
             android:exported="false"
             tools:node="merge">
-            <meta-data
-                android:name="com.jlucraft.console.startup.ServiceLocatorInitializer"
-                android:value="androidx.startup" />
             <meta-data
                 android:name="com.jlucraft.console.startup.PushLifecycleInitializer"
                 android:value="androidx.startup" />
