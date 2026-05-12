@@ -8,7 +8,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.auth.TeeAuthManager
-import com.jlucraft.console.data.auth.withAuthenticatedOperation
 import com.jlucraft.console.domain.auth.AuthenticatedOperationUseCase
 import com.jlucraft.console.data.model.CreateProposalAuthPayload
 import com.jlucraft.console.data.model.ExecuteProposalAuthPayload
@@ -16,12 +15,14 @@ import com.jlucraft.console.data.model.GovernanceEvent
 import com.jlucraft.console.data.model.GovernanceEventType
 import com.jlucraft.console.data.model.GrantRoleAuthPayload
 import com.jlucraft.console.data.model.IssueCredentialAuthPayload
+import com.jlucraft.console.data.model.IssueCredentialRequest
 import com.jlucraft.console.data.model.MemberSummary
 import com.jlucraft.console.data.model.Proposal
 import com.jlucraft.console.data.model.ProposalPayload
 import com.jlucraft.console.data.model.RejectProposalAuthPayload
 import com.jlucraft.console.data.model.RevokeCredentialAuthPayload
 import com.jlucraft.console.data.model.SubmitProposalDraftAuthPayload
+import com.jlucraft.console.data.model.VcTemplate
 import com.jlucraft.console.data.model.toJsonString
 import com.jlucraft.console.data.remote.PushService
 import com.jlucraft.console.data.remote.libp2p.Libp2pClient
@@ -49,6 +50,7 @@ data class GovernanceUiState(
     val isSigning: Boolean = false,
     val signError: String? = null,
     val statusFilter: String? = null,
+    val memberRoleFilter: String? = null,
     val activeTab: String = "proposals",
     val showVcResultSheet: Boolean = false,
     val issuedVcJson: String? = null,
@@ -56,7 +58,11 @@ data class GovernanceUiState(
     val vcVerificationResult: com.jlucraft.console.data.model.VcVerificationResult? = null,
     val streamStatus: StreamStatus = StreamStatus.OFFLINE,
     val lastEventTime: String? = null,
-    val lastEvent: GovernanceEvent? = null
+    val lastEvent: GovernanceEvent? = null,
+
+    val vcTemplates: List<VcTemplate> = emptyList(),
+    val showTemplateDialog: Boolean = false,
+    val editingTemplate: VcTemplate? = null
 )
 
 @HiltViewModel
@@ -125,9 +131,14 @@ class GovernanceViewModel @Inject constructor(
     private fun parseAndApplyGovernanceEvent(envelope: com.jlucraft.console.data.remote.libp2p.EventEnvelope) {
         when {
             envelope.eventType.contains("proposal", ignoreCase = true) ||
-            envelope.eventType.contains("member", ignoreCase = true) ||
             envelope.eventType.contains("credential", ignoreCase = true) ||
             envelope.eventType.contains("governance", ignoreCase = true) -> refresh()
+            envelope.eventType.contains("member", ignoreCase = true) -> {
+                refresh()
+                if (_uiState.value.activeTab == "members") {
+                    loadMembers()
+                }
+            }
         }
     }
 
@@ -163,6 +174,11 @@ class GovernanceViewModel @Inject constructor(
         if (tab == "members") loadMembers()
     }
 
+    fun setMemberRoleFilter(role: String?) {
+        _uiState.value = _uiState.value.copy(memberRoleFilter = role)
+        loadMembers()
+    }
+
     fun showCreateDialog() {
         _uiState.value = _uiState.value.copy(showCreateDialog = true, createError = null)
     }
@@ -182,13 +198,12 @@ class GovernanceViewModel @Inject constructor(
     fun createProposal(proposalType: String, payload: ProposalPayload) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(createError = null)
-            val proposer = teeAuth.getPublicKey()
-            val result = authenticatedOperation.execute(
+            val result = authenticatedOperation.executeUsingDeviceKey(
                 cmdType = "create-proposal",
-                payload = CreateProposalAuthPayload(proposalType, payload, proposer),
+                payload = { proposer -> CreateProposalAuthPayload(proposalType, payload, proposer) },
                 title = "创建提案",
                 subtitle = "请验证身份以创建治理提案",
-                operation = { client.createProposal(proposalType, payload, proposer) },
+                operation = { proposer -> client.createProposal(proposalType, payload, proposer) },
                 failureMessage = "创建失败"
             )
             if (result.isSuccess) {
@@ -255,7 +270,7 @@ class GovernanceViewModel @Inject constructor(
 
             val payloadBytes = buildSignablePayload(fullProposal)
 
-            val signature = authCoordinator.signWithBiometric(
+            val signed = authCoordinator.signWithBiometricAndDeviceKey(
                 title = "签署提案",
                 subtitle = "请验证身份以签署提案: ${proposal.proposalType}",
                 message = payloadBytes
@@ -267,8 +282,7 @@ class GovernanceViewModel @Inject constructor(
                 return@launch
             }
 
-            val pubkey = teeAuth.getPublicKey()
-            client.signProposal(proposal.id, pubkey, signature)
+            client.signProposal(proposal.id, signed.devicePublicKey, signed.signature)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         isSigning = false,
@@ -304,16 +318,19 @@ class GovernanceViewModel @Inject constructor(
         }
     }
 
-    // ── Member management ──
+
 
     fun loadMembers() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(membersLoading = true, membersError = null)
             client.listMembers()
                 .onSuccess { members ->
+                    val filtered = _uiState.value.memberRoleFilter?.let { filter ->
+                        members.filter { it.role.equals(filter, ignoreCase = true) }
+                    } ?: members
                     _uiState.value = _uiState.value.copy(
                         membersLoading = false,
-                        members = members
+                        members = filtered
                     )
                 }
                 .onFailure { error ->

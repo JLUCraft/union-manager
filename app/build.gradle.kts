@@ -8,6 +8,16 @@ plugins {
 
 val protobufVersion = "4.35.0-RC2"
 val protoc by configurations.creating
+val hostOs = org.gradle.internal.os.OperatingSystem.current()
+val hostArch = System.getProperty("os.arch")
+val protocArtifact = when {
+    hostOs.isMacOsX && hostArch == "aarch64" -> "osx-aarch_64"
+    hostOs.isLinux && hostArch == "amd64" -> "linux-x86_64"
+    hostOs.isLinux && hostArch == "x86_64" -> "linux-x86_64"
+    hostOs.isWindows && hostArch == "amd64" -> "windows-x86_64"
+    hostOs.isWindows && hostArch == "x86_64" -> "windows-x86_64"
+    else -> error("Unsupported protoc host platform: ${System.getProperty("os.name")} $hostArch")
+}
 
 val protoGeneratedJava = layout.buildDirectory.dir("generated/source/proto/main/java")
 val protoGeneratedKotlin = layout.buildDirectory.dir("generated/source/proto/main/kotlin")
@@ -40,16 +50,26 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
-    kotlin { jvmToolchain(21) }
+    kotlin {
+        jvmToolchain(21)
+    }
 
     packaging {
-        resources { excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF" }
+        resources {
+            excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+            excludes += "META-INF/INDEX.LIST"
+            excludes += "META-INF/io.netty.versions.properties"
+        }
     }
 
     sourceSets {
         getByName("main") {
-            java.srcDir(protoGeneratedJava.get().asFile)
-            java.srcDir(protoGeneratedKotlin.get().asFile)
+            java.directories.addAll(
+                listOf(
+                    protoGeneratedJava.get().asFile.absolutePath,
+                    protoGeneratedKotlin.get().asFile.absolutePath,
+                )
+            )
         }
     }
 }
@@ -72,25 +92,28 @@ val generateProto by tasks.registering(Exec::class) {
         javaDir.mkdirs()
         kotlinDir.mkdirs()
         protoc.singleFile.setExecutable(true)
+        commandLine(
+            listOf(
+                protoc.singleFile.absolutePath,
+                "--proto_path=${protoSharedDir.asFile.absolutePath}",
+                "--java_out=lite:${javaDir.absolutePath}",
+                "--kotlin_out=lite:${kotlinDir.absolutePath}",
+            ) + protoFiles.files.sortedBy { it.name }.map { it.absolutePath }
+        )
     }
-
-    commandLine(
-        listOf(
-            protoc.singleFile.absolutePath,
-            "--proto_path=${protoSharedDir.asFile.absolutePath}",
-            "--java_out=lite:${javaDir.absolutePath}",
-            "--kotlin_out=lite:${kotlinDir.absolutePath}",
-        ) + protoFiles.files.sortedBy { it.name }.map { it.absolutePath }
-    )
 }
 
 tasks.matching { it.name == "preBuild" || it.name.startsWith("compile") }.configureEach {
     dependsOn(generateProto)
 }
 
+configurations {
+    matching { it.name.endsWith("RuntimeClasspath") }.configureEach {
+        exclude("com.google.protobuf", "protobuf-java")
+    }
+}
 configurations.all {
     exclude("com.google.crypto.tink", "tink-android")
-    exclude("com.google.protobuf", "protobuf-java")
 }
 
 dependencies {
@@ -122,7 +145,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("com.google.protobuf:protobuf-kotlin-lite:$protobufVersion")
-    protoc("com.google.protobuf:protoc:$protobufVersion:windows-x86_64@exe")
+    protoc("com.google.protobuf:protoc:$protobufVersion:$protocArtifact@exe")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")

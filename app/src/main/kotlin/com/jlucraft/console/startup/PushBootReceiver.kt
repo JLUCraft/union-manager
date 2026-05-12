@@ -11,19 +11,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-/**
- * Re-registers with UnifiedPush after device boot.
+
  *
- * Loads locally-cached VAPID public key into the runtime holder,
- * then delegates to [UnifiedPushRegistrar].
- */
 public class PushBootReceiver : BroadcastReceiver() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             scope.launch {
-                // Restore cached VAPID key before registration
+
                 val configStore = PushRuntimeConfigStore(context)
                 configStore.refreshCache()
                 val vapidKey = configStore.getVapidPublicKey()

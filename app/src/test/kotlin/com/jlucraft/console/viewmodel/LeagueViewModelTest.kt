@@ -3,22 +3,19 @@ package com.jlucraft.console.viewmodel
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.auth.TeeAuthManager
+import com.jlucraft.console.data.model.GenericPushEventData
 import com.jlucraft.console.data.model.Match
 import com.jlucraft.console.data.model.Team
 import com.jlucraft.console.data.model.MatchStatus
 import com.jlucraft.console.data.model.Tournament
 import com.jlucraft.console.data.model.TournamentStatus
-import com.jlucraft.console.data.remote.ApiService
 import com.jlucraft.console.data.remote.PushService
-import com.jlucraft.console.data.repository.NodeRepository
+import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.*
-import kotlinx.serialization.json.JsonObject
-import io.mockk.just
-import io.mockk.Runs
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -32,12 +29,11 @@ class LeagueViewModelTest {
     val instantTaskRule = InstantTaskExecutorRule()
 
     private val testDispatcher = StandardTestDispatcher()
-    private lateinit var repository: NodeRepository
+    private lateinit var client: Libp2pClient
     private lateinit var teeAuth: TeeAuthManager
     private lateinit var authCoordinator: AuthCoordinator
-    private lateinit var pushEvents: MutableSharedFlow<PushService.WebSocketEvent>
+    private lateinit var pushEvents: MutableSharedFlow<PushService.PushEvent>
     private lateinit var pushService: PushService
-    private lateinit var apiService: ApiService
     private lateinit var viewModel: LeagueViewModel
 
     private val mockTournaments = listOf(
@@ -88,14 +84,17 @@ class LeagueViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        repository = mockk()
+        client = mockk()
         teeAuth = mockk()
         authCoordinator = mockk(relaxed = true)
-        apiService = mockk(relaxed = true)
 
         pushEvents = MutableSharedFlow(replay = 0, extraBufferCapacity = 64)
         pushService = mockk()
         every { pushService.events } returns pushEvents
+        coEvery { client.listMatches(any()) } returns Result.success(emptyList())
+        coEvery { client.listTeams() } returns Result.success(emptyList())
+        coEvery { client.listDisputes(any()) } returns Result.success(emptyList())
+        coEvery { client.listSeasons() } returns Result.success(emptyList())
     }
 
     @After
@@ -105,21 +104,21 @@ class LeagueViewModelTest {
     }
 
     private fun mockListTournaments(tournaments: List<Tournament> = mockTournaments) {
-        coEvery { repository.listTournaments() } returns Result.success(tournaments)
+        coEvery { client.listTournaments() } returns Result.success(tournaments)
     }
 
     private fun createViewModel() {
-        viewModel = LeagueViewModel(repository, teeAuth, authCoordinator, apiService, pushService)
+        viewModel = LeagueViewModel(client, teeAuth, authCoordinator, pushService)
     }
 
-    private fun makeEvent(type: String) = PushService.WebSocketEvent(
+    private fun makeEvent(type: String) = PushService.PushEvent(
         type = type,
-        data = JsonObject(emptyMap())
+        data = GenericPushEventData(raw = "")
     )
 
-    // ---------------------------------------------------------------
-    // 1. Initial state loads tournaments
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun initial_state_loads_tournaments() {
@@ -131,12 +130,12 @@ class LeagueViewModelTest {
         assertFalse(viewModel.uiState.value.isLoading)
         assertNull(viewModel.uiState.value.error)
 
-        coVerify(exactly = 1) { repository.listTournaments() }
+        coVerify(exactly = 1) { client.listTournaments() }
     }
 
-    // ---------------------------------------------------------------
-    // 2. Push event "tournament_created" triggers refresh
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun push_event_tournament_created_triggers_refresh() {
@@ -147,12 +146,12 @@ class LeagueViewModelTest {
         pushEvents.tryEmit(makeEvent("tournament_created"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { repository.listTournaments() }
+        coVerify(exactly = 2) { client.listTournaments() }
     }
 
-    // ---------------------------------------------------------------
-    // 3. Push event "tournament_updated" triggers refresh
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun push_event_tournament_updated_triggers_refresh() {
@@ -163,12 +162,12 @@ class LeagueViewModelTest {
         pushEvents.tryEmit(makeEvent("tournament_updated"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { repository.listTournaments() }
+        coVerify(exactly = 2) { client.listTournaments() }
     }
 
-    // ---------------------------------------------------------------
-    // 4. Push event "match_scheduled" triggers refresh
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun push_event_match_scheduled_triggers_refresh() {
@@ -179,12 +178,12 @@ class LeagueViewModelTest {
         pushEvents.tryEmit(makeEvent("match_scheduled"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { repository.listTournaments() }
+        coVerify(exactly = 2) { client.listTournaments() }
     }
 
-    // ---------------------------------------------------------------
-    // 5. Push event "match_result" triggers refresh
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun push_event_match_result_triggers_refresh() {
@@ -195,12 +194,12 @@ class LeagueViewModelTest {
         pushEvents.tryEmit(makeEvent("match_result"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { repository.listTournaments() }
+        coVerify(exactly = 2) { client.listTournaments() }
     }
 
-    // ---------------------------------------------------------------
-    // 6. Push event "season_created" triggers refresh
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun push_event_season_created_triggers_refresh() {
@@ -211,12 +210,12 @@ class LeagueViewModelTest {
         pushEvents.tryEmit(makeEvent("season_created"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { repository.listTournaments() }
+        coVerify(exactly = 2) { client.listTournaments() }
     }
 
-    // ---------------------------------------------------------------
-    // 7. Non-matching push event does not refresh
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun non_matching_push_event_does_not_refresh() {
@@ -227,18 +226,18 @@ class LeagueViewModelTest {
         pushEvents.tryEmit(makeEvent("unrelated_event"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 1) { repository.listTournaments() }
+        coVerify(exactly = 1) { client.listTournaments() }
     }
 
-    // ---------------------------------------------------------------
-    // 8. SelectTournament loads detail
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun selectTournament_loads_detail() {
         mockListTournaments()
-        coEvery { repository.listMatches("t-1") } returns Result.success(mockMatches)
-        coEvery { repository.listTeams() } returns Result.success(mockTeams)
+        coEvery { client.listMatches("t-1") } returns Result.success(mockMatches)
+        coEvery { client.listTeams() } returns Result.success(mockTeams)
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -252,19 +251,19 @@ class LeagueViewModelTest {
         assertFalse(viewModel.uiState.value.detailLoading)
         assertNull(viewModel.uiState.value.detailError)
 
-        coVerify(exactly = 1) { repository.listMatches("t-1") }
-        coVerify(exactly = 1) { repository.listTeams() }
+        coVerify(exactly = 1) { client.listMatches("t-1") }
+        coVerify(exactly = 1) { client.listTeams() }
     }
 
-    // ---------------------------------------------------------------
-    // 9. ClearSelection clears detail state
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun clearSelection_clears_detail_state() {
         mockListTournaments()
-        coEvery { repository.listMatches("t-1") } returns Result.success(mockMatches)
-        coEvery { repository.listTeams() } returns Result.success(mockTeams)
+        coEvery { client.listMatches("t-1") } returns Result.success(mockMatches)
+        coEvery { client.listTeams() } returns Result.success(mockTeams)
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -283,9 +282,9 @@ class LeagueViewModelTest {
         assertNull(viewModel.uiState.value.detailError)
     }
 
-    // ---------------------------------------------------------------
-    // 10. ShowCreateDialog / dismissCreateDialog work
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun showCreateDialog_opens_dialog() {
@@ -314,13 +313,13 @@ class LeagueViewModelTest {
         assertNull(viewModel.uiState.value.createError)
     }
 
-    // ---------------------------------------------------------------
-    // 11. Error state is handled
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun error_state_is_handled() {
-        coEvery { repository.listTournaments() } returns Result.failure(Exception("Network error"))
+        coEvery { client.listTournaments() } returns Result.failure(Exception("Network error"))
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -330,9 +329,9 @@ class LeagueViewModelTest {
         assertTrue(viewModel.uiState.value.tournaments.isEmpty())
     }
 
-    // ---------------------------------------------------------------
-    // 12. Loading state is set correctly
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun loading_state_is_set_correctly() {
@@ -345,7 +344,7 @@ class LeagueViewModelTest {
 
     @Test
     fun loading_state_is_false_after_error() {
-        coEvery { repository.listTournaments() } returns Result.failure(Exception("fail"))
+        coEvery { client.listTournaments() } returns Result.failure(Exception("fail"))
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -354,29 +353,32 @@ class LeagueViewModelTest {
         assertNotNull(viewModel.uiState.value.error)
     }
 
-    // ---------------------------------------------------------------
-    // 13. resolveDisputeViaProposal sends cmdType = "create-proposal"
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun resolveDisputeViaProposal_sends_correct_cmdType() = runTest {
         mockListTournaments()
-        every { teeAuth.getPublicKey() } returns "test-pubkey"
         coEvery {
-            authCoordinator.authenticateForOperation(
+            authCoordinator.authenticateForOperationWithDeviceKey(
                 cmdType = "create-proposal",
                 payload = any(),
                 title = any(),
                 subtitle = any()
             )
-        } returns Result.success(Unit)
-        coEvery { authCoordinator.clearAuth() } just Runs
-        coEvery { repository.listDisputes(any()) } returns Result.success(emptyList())
-        coEvery { apiService.createProposal(any(), any(), any()) } returns Result.success(
+        } returns Result.success("test-pubkey")
+        every { authCoordinator.clearAuth() } just Runs
+        coEvery { client.listDisputes(any()) } returns Result.success(emptyList())
+        coEvery { client.createProposal(any(), any(), any()) } returns Result.success(
             com.jlucraft.console.data.model.Proposal(
                 id = "prop-1",
                 proposalType = "dispute-resolve",
-                payload = JsonObject(emptyMap()),
+                payload = com.jlucraft.console.data.model.DisputeResolveProposalPayload(
+                    disputeId = "d-1",
+                    resolution = "replay",
+                    status = "resolved"
+                ),
                 proposer = "test-pubkey",
                 expiresAt = "2024-12-31T00:00:00Z",
                 signatures = emptyList(),
@@ -392,7 +394,7 @@ class LeagueViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         coVerify(exactly = 1) {
-            authCoordinator.authenticateForOperation(
+            authCoordinator.authenticateForOperationWithDeviceKey(
                 cmdType = "create-proposal",
                 payload = any(),
                 title = any(),

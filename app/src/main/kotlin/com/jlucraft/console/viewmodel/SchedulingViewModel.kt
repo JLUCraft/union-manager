@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import com.jlucraft.console.data.auth.AuthCoordinator
-import com.jlucraft.console.data.auth.ReadOnlyDeviceException
 import com.jlucraft.console.data.auth.TeeAuthManager
 import com.jlucraft.console.data.auth.withAuthenticatedOperation
 import com.jlucraft.console.data.model.ApplySchedulingConstraintsPayload
@@ -123,12 +122,8 @@ class SchedulingViewModel @Inject constructor(
         val constraints = state.constraints ?: return
         val instanceId = state.instanceId
 
-        if (!teeAuth.isTeeBacked) {
-            _uiState.value = _uiState.value.copy(
-                applyError = ReadOnlyDeviceException.fromCapability(teeAuth.capability).message
-            )
-            return
-        }
+
+
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(

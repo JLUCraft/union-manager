@@ -6,14 +6,8 @@ import com.jlucraft.console.data.model.OracleVerificationResult
 import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 import java.security.MessageDigest
 
-/**
- * Repository for oracle score retrieval and local proof verification.
+
  *
- * The oracle subsystem publishes Merkle roots to the audit chain periodically.
- * Each player can fetch their individual proof and verify locally without
- * trusting the server — the proof is cryptographically verifiable against
- * the published root.
- */
 class OracleRepository(
     private val client: Libp2pClient
 ) {

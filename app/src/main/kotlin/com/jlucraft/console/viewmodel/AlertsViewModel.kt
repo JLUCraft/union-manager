@@ -25,14 +25,8 @@ data class AlertsUiState(
     val actionSuccess: String? = null
 )
 
-/**
- * ViewModel for alert list with severity filters and acknowledge/resolve actions.
+
  *
- * Routes:
- *  - GET /v1/alerts?severity=&include_resolved=
- *  - POST /v1/alerts/{id}/acknowledge
- *  - POST /v1/alerts/{id}/resolve
- */
 @HiltViewModel
 class AlertsViewModel @Inject constructor(
     private val client: Libp2pClient,

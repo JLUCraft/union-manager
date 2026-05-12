@@ -21,20 +21,9 @@ import com.jlucraft.console.ui.theme.StatusAmber
 import com.jlucraft.console.ui.theme.StatusGreen
 import com.jlucraft.console.viewmodel.OracleViewModel
 
-/**
- * Oracle proof verification screen.
+
  *
- * Allows the user to:
- *   1. Enter a player ID
- *   2. Fetch the oracle score + Merkle proof from GET /v1/oracle/scores/{player_id}
- *   3. Display the proof details: root, proof nodes, leaf index, leaf hash
- *   4. Show local (client-side) Merkle proof verification result
- *   5. Show server-local verification status
- *   6. Re-verify locally
  *
- * This composable can be embedded in any screen (League, Settings, etc.)
- * or displayed as a standalone dialog/sheet.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OracleProofPanel(
@@ -51,7 +40,7 @@ fun OracleProofPanel(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // ── Header (only when embedded without parent Scaffold) ──
+
         if (onDismiss == null) {
             Text(
                 text = "预言机证明验证",
@@ -59,7 +48,7 @@ fun OracleProofPanel(
             )
         }
 
-        // ── Player ID input ──
+
         OutlinedTextField(
             value = playerIdInput,
             onValueChange = { playerIdInput = it },
@@ -81,7 +70,7 @@ fun OracleProofPanel(
             }
         )
 
-        // ── Loading state ──
+
         if (state.isLoading) {
             Box(
                 modifier = Modifier.fillMaxWidth().padding(32.dp),
@@ -91,7 +80,7 @@ fun OracleProofPanel(
             }
         }
 
-        // ── Error state ──
+
         state.error?.let { error ->
             Card(
                 colors = CardDefaults.cardColors(
@@ -108,7 +97,7 @@ fun OracleProofPanel(
             }
         }
 
-        // ── Oracle Score Display ──
+
         state.oracleScore?.let { score ->
             OracleScoreCard(score)
             Spacer(modifier = Modifier.height(8.dp))
@@ -116,7 +105,7 @@ fun OracleProofPanel(
             Spacer(modifier = Modifier.height(8.dp))
             VerificationResultCard(state.verificationResult, score.serverVerified)
 
-            // Re-verify button
+
             OutlinedButton(
                 onClick = { viewModel.verifyLocally() },
                 modifier = Modifier.fillMaxWidth()
@@ -244,7 +233,7 @@ private fun VerificationResultCard(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Local verification
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -268,7 +257,7 @@ private fun VerificationResultCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Server verification
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -281,7 +270,7 @@ private fun VerificationResultCard(
                 )
             }
 
-            // Messages
+
             verificationResult?.messages?.takeIf { it.isNotEmpty() }?.let { messages ->
                 Spacer(modifier = Modifier.height(8.dp))
                 messages.forEach { msg ->

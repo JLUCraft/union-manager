@@ -19,8 +19,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jlucraft.console.app.AppServices
+import com.jlucraft.console.data.auth.AuthStateHolder
+import com.jlucraft.console.data.auth.ReadOnlyMode
 import com.jlucraft.console.data.model.DisputeMatch
+import com.jlucraft.console.data.model.Leaderboard
 import com.jlucraft.console.data.model.Match
+import com.jlucraft.console.data.model.MatchStatus
+import com.jlucraft.console.data.model.Season
 import com.jlucraft.console.data.model.Tournament
 import com.jlucraft.console.data.model.TournamentStatus
 import com.jlucraft.console.data.model.statusText
@@ -28,6 +33,7 @@ import com.jlucraft.console.data.model.toShortDate
 import com.jlucraft.console.data.model.truncate
 import com.jlucraft.console.ui.components.statusColor
 import com.jlucraft.console.ui.components.DetailRow
+import com.jlucraft.console.ui.components.ReadOnlyModeBanner
 import com.jlucraft.console.ui.components.StatusChip
 import com.jlucraft.console.ui.components.listStatePlaceholders
 import com.jlucraft.console.ui.theme.*
@@ -40,6 +46,8 @@ fun LeagueScreen(
     viewModel: LeagueViewModel = viewModel(),
 ) {
     val state = viewModel.uiState.value
+    val readOnlyState by AuthStateHolder.readOnlyMode.collectAsState()
+    val isReadOnly = readOnlyState is ReadOnlyMode.ReadOnly
 
     when {
         state.selectedTournament != null -> TournamentDetailScreen(
@@ -49,7 +57,25 @@ fun LeagueScreen(
             isLoading = state.detailLoading,
             error = state.detailError,
             onBack = { viewModel.clearSelection() },
-            onStatusChange = { viewModel.updateTournamentStatus(it) }
+            onStatusChange = { viewModel.updateTournamentStatus(it) },
+            onPauseMatch = { viewModel.pauseMatch(it) },
+            onResumeMatch = { viewModel.resumeMatch(it) },
+            onResetMatch = { viewModel.resetMatch(it) },
+            onJudgeMatch = { matchId, winnerId, reason -> viewModel.judgeMatch(matchId, winnerId, reason) },
+            disputes = state.disputes,
+            disputesLoading = state.disputesLoading,
+            disputesError = state.disputesError,
+            onSelectDispute = { viewModel.selectDispute(it) },
+            onCreateDispute = { viewModel.showCreateDisputeDialog() },
+            seasons = state.seasons,
+            seasonLoading = state.seasonLoading,
+            seasonError = state.seasonError,
+            onArchiveSeason = { viewModel.archiveSelectedSeason() },
+            onCopySeasonTemplate = { viewModel.copySeasonTemplate(it) },
+            onSelectSeason = { viewModel.selectSeason(it) },
+            selectedSeason = state.selectedSeason,
+            leaderboard = state.leaderboard,
+            readOnlyMode = readOnlyState
         )
         else -> TournamentListScreen(
             state = state,
@@ -59,6 +85,18 @@ fun LeagueScreen(
             onDismissCreate = { viewModel.dismissCreateDialog() },
             onCreate = { name, gameType, mode, maxParticipants, minMemberScore, regOpen, regClose ->
                 viewModel.createTournament(name, gameType, mode, maxParticipants, minMemberScore, regOpen, regClose)
+            },
+            readOnlyMode = readOnlyState
+        )
+    }
+
+
+    if (state.showCreateDisputeDialog && state.selectedTournament != null) {
+        CreateDisputeDialog(
+            matches = state.matches,
+            onDismiss = { viewModel.dismissCreateDisputeDialog() },
+            onCreate = { matchId, reason, evidence ->
+                viewModel.createDispute(matchId, reason, evidence)
             }
         )
     }
@@ -72,7 +110,8 @@ private fun TournamentListScreen(
     onShowCreate: () -> Unit,
     onSelectTournament: (Tournament) -> Unit,
     onDismissCreate: () -> Unit,
-    onCreate: (String, String, String, Int, Int, String, String) -> Unit
+    onCreate: (String, String, String, Int, Int, String, String) -> Unit,
+    readOnlyMode: ReadOnlyMode
 ) {
     val tournaments = state.tournaments
     val statusCounts = remember(tournaments) {
@@ -98,8 +137,10 @@ private fun TournamentListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { onShowCreate() }) {
-                Icon(Icons.Default.Add, contentDescription = "创建赛事")
+            if (readOnlyMode !is ReadOnlyMode.ReadOnly) {
+                FloatingActionButton(onClick = { onShowCreate() }) {
+                    Icon(Icons.Default.Add, contentDescription = "创建赛事")
+                }
             }
         }
     ) { padding ->
@@ -110,6 +151,12 @@ private fun TournamentListScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (readOnlyMode is ReadOnlyMode.ReadOnly) {
+                item {
+                    ReadOnlyModeBanner(readOnlyMode)
+                }
+            }
+
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -368,8 +415,27 @@ private fun TournamentDetailScreen(
     isLoading: Boolean,
     error: String?,
     onBack: () -> Unit,
-    onStatusChange: (TournamentStatus) -> Unit
+    onStatusChange: (TournamentStatus) -> Unit,
+    onPauseMatch: (String) -> Unit = {},
+    onResumeMatch: (String) -> Unit = {},
+    onResetMatch: (String) -> Unit = {},
+    onJudgeMatch: (matchId: String, winnerId: String, reason: String) -> Unit = { _, _, _ -> },
+    disputes: List<DisputeMatch> = emptyList(),
+    disputesLoading: Boolean = false,
+    disputesError: String? = null,
+    onSelectDispute: (DisputeMatch) -> Unit = {},
+    onCreateDispute: () -> Unit = {},
+    seasons: List<Season> = emptyList(),
+    seasonLoading: Boolean = false,
+    seasonError: String? = null,
+    onArchiveSeason: () -> Unit = {},
+    onCopySeasonTemplate: (String) -> Unit = {},
+    onSelectSeason: (Season) -> Unit = {},
+    selectedSeason: Season? = null,
+    leaderboard: Leaderboard? = null,
+    readOnlyMode: ReadOnlyMode
 ) {
+    val isReadOnly = readOnlyMode is ReadOnlyMode.ReadOnly
     val nextStatus = when (tournament.status) {
         TournamentStatus.Draft -> TournamentStatus.Registration to "开放报名"
         TournamentStatus.Registration -> TournamentStatus.Ongoing to "开始比赛"
@@ -399,6 +465,13 @@ private fun TournamentDetailScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (isReadOnly) {
+                item {
+                    ReadOnlyModeBanner(readOnlyMode)
+                }
+            }
+
+
             item {
                 val statusColor = tournament.statusColor()
                 Card(
@@ -448,7 +521,7 @@ private fun TournamentDetailScreen(
                         DetailRow("最低积分", tournament.min_member_score.toString())
                         DetailRow("创建时间", tournament.created_at.toShortDate())
 
-                        if (nextStatus != null) {
+                        if (nextStatus != null && !isReadOnly) {
                             Spacer(modifier = Modifier.height(12.dp))
                             Button(
                                 onClick = { onStatusChange(nextStatus.first) },
@@ -481,6 +554,7 @@ private fun TournamentDetailScreen(
                 }
             }
 
+
             if (matches.isNotEmpty()) {
                 item {
                     Text(
@@ -490,9 +564,44 @@ private fun TournamentDetailScreen(
                     )
                 }
                 items(matches, key = { it.id }) { match ->
-                    MatchCard(match)
+                    MatchOperationsCard(
+                        match = match,
+                        readOnly = isReadOnly,
+                        onPause = onPauseMatch,
+                        onResume = onResumeMatch,
+                        onReset = onResetMatch,
+                        onJudge = onJudgeMatch
+                    )
                 }
             }
+
+
+            item {
+                DisputeListSection(
+                    disputes = disputes,
+                    isLoading = disputesLoading,
+                    error = disputesError,
+                    onSelect = onSelectDispute,
+                    onCreateDispute = onCreateDispute,
+                    readOnly = isReadOnly
+                )
+            }
+
+
+            item {
+                SeasonManagementSection(
+                    seasons = seasons,
+                    isLoading = seasonLoading,
+                    error = seasonError,
+                    selectedSeason = selectedSeason,
+                    leaderboard = leaderboard,
+                    onArchive = onArchiveSeason,
+                    onCopyTemplate = onCopySeasonTemplate,
+                    onSelectSeason = onSelectSeason,
+                    readOnly = isReadOnly
+                )
+            }
+
 
             if (teams.isNotEmpty()) {
                 item {
@@ -510,7 +619,7 @@ private fun TournamentDetailScreen(
     }
 }
 
-// ── Dispute UI (call from TournamentDetailScreen caller) ──────
+
 
 @Composable
 fun DisputeListSection(
@@ -518,7 +627,8 @@ fun DisputeListSection(
     isLoading: Boolean,
     error: String?,
     onSelect: (DisputeMatch) -> Unit,
-    onCreateDispute: () -> Unit
+    onCreateDispute: () -> Unit,
+    readOnly: Boolean
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -530,10 +640,12 @@ fun DisputeListSection(
                 text = "争议 (${disputes.size})",
                 style = MaterialTheme.typography.titleMedium
             )
-            TextButton(onClick = onCreateDispute) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("提交争议")
+            if (!readOnly) {
+                TextButton(onClick = onCreateDispute) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("提交争议")
+                }
             }
         }
 
@@ -692,7 +804,27 @@ fun CreateDisputeDialog(
 }
 
 @Composable
-private fun MatchCard(match: Match) {
+private fun MatchOperationsCard(
+    match: Match,
+    readOnly: Boolean,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit,
+    onReset: (String) -> Unit,
+    onJudge: (matchId: String, winnerId: String, reason: String) -> Unit
+) {
+    var showJudgeDialog by remember { mutableStateOf(false) }
+
+    if (showJudgeDialog) {
+        JudgeMatchDialog(
+            match = match,
+            onDismiss = { showJudgeDialog = false },
+            onConfirm = { winnerId, reason ->
+                onJudge(match.id, winnerId, reason)
+                showJudgeDialog = false
+            }
+        )
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -717,6 +849,255 @@ private fun MatchCard(match: Match) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (!readOnly) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (match.status == MatchStatus.Live) {
+                        OutlinedButton(
+                            onClick = { onPause(match.id) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("暂停", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    if (match.status == MatchStatus.Scheduled || match.status == MatchStatus.Live) {
+                        OutlinedButton(
+                            onClick = { onResume(match.id) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("恢复", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    if (match.status == MatchStatus.Live || match.status == MatchStatus.Finished) {
+                        OutlinedButton(
+                            onClick = { onReset(match.id) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("重置", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    if (match.status == MatchStatus.Disputed || match.status == MatchStatus.Live || match.status == MatchStatus.Finished) {
+                        OutlinedButton(
+                            onClick = { showJudgeDialog = true },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusAmber)
+                        ) {
+                            Text("判定", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun JudgeMatchDialog(
+    match: Match,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String) -> Unit
+) {
+    var winnerId by rememberSaveable { mutableStateOf(match.participants.firstOrNull() ?: "") }
+    var reason by rememberSaveable { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("判定胜负 — 第 ${match.round} 轮") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("人工判定胜负是争议处理的兜底手段，需至少两名管理员签名并进入治理流程。")
+                OutlinedTextField(
+                    value = winnerId,
+                    onValueChange = { winnerId = it },
+                    label = { Text("胜者 ID") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    label = { Text("判定理由（必填，用于审计）") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(winnerId, reason) },
+                enabled = winnerId.isNotBlank() && reason.isNotBlank()
+            ) {
+                Text("确认判定", color = StatusAmber)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+
+
+@Composable
+private fun SeasonManagementSection(
+    seasons: List<Season>,
+    isLoading: Boolean,
+    error: String?,
+    selectedSeason: Season?,
+    leaderboard: Leaderboard?,
+    onArchive: () -> Unit,
+    onCopyTemplate: (String) -> Unit,
+    onSelectSeason: (Season) -> Unit,
+    readOnly: Boolean
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "赛季管理",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+
+        when {
+            isLoading -> {
+                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+            }
+            error != null -> {
+                Text(
+                    text = "加载赛季失败: $error",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+            seasons.isEmpty() -> {
+                Text(
+                    text = "暂无赛季数据",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+            else -> {
+                seasons.forEach { season ->
+                    val isSelected = selectedSeason?.id == season.id
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        onClick = { onSelectSeason(season) }
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = season.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                    shape = MaterialTheme.shapes.small
+                                ) {
+                                    Text(
+                                        text = season.status,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${season.start_date}${season.end_date?.let { " → $it" } ?: ""}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (season.tournament_ids.isNotEmpty()) {
+                                Text(
+                                    text = "${season.tournament_ids.size} 个赛事",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            if (!readOnly) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (season.status != "archived") {
+                                        OutlinedButton(
+                                            onClick = onArchive,
+                                            modifier = Modifier.weight(1f),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                            enabled = selectedSeason?.id == season.id
+                                        ) {
+                                            Text("归档", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
+                                    OutlinedButton(
+                                        onClick = { onCopyTemplate(season.id) },
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("复制模板", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+
+                if (selectedSeason != null && leaderboard != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "排行榜 — ${selectedSeason.name}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (leaderboard.solo.isNotEmpty()) {
+                        Text(
+                            text = "个人",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                        leaderboard.solo.take(5).forEachIndexed { index, entry ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "${index + 1}. ${entry.player_id.truncate(16)}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    text = "${entry.total_score} 分 · ${entry.tournaments_played} 场",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

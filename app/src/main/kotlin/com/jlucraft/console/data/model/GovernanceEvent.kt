@@ -2,9 +2,7 @@ package com.jlucraft.console.data.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-/**
- * A real-time governance event received via libp2p event stream.
- */
+
 @Serializable
 data class GovernanceEvent(
     @SerialName("event_id") val eventId: String,

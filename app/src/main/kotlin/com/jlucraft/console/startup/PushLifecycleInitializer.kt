@@ -33,19 +33,19 @@ class PushLifecycleInitializer : Initializer<Unit> {
         val configService = PushConfigService(services.client, configStore)
 
         scope.launch {
-            // 1. Ensure push config (VAPID public key) from server before registration
+
             configService.ensurePushConfig()
 
-            // 2. Load VAPID key into runtime holder for embedded FCM distributor
+
             val vapidKey = configStore.getVapidPublicKey()
             if (vapidKey != null) {
                 PushRuntimeConfigHolder.vapidPublicKey = vapidKey
             }
 
-            // 3. Register with UnifiedPush (auto-select distributor)
+
             UnifiedPushRegistrar.register(context)
 
-            // 4. Listen for endpoint changes and report to server
+
             UnionPushReceiver.endpointFlow.collect { endpoint ->
                 if (endpoint.isNotBlank()) {
                     val devicePubkey = try {
@@ -62,11 +62,11 @@ class PushLifecycleInitializer : Initializer<Unit> {
             }
         }
 
-        // PushService is event-bus only now; start collecting
+
         services.pushService.connect()
 
-        // If the app is killed, Android delivers UnifiedPush messages
-        // via broadcast receivers regardless of foreground/background state.
+
+
     }
 
     override fun dependencies(): List<Class<out Initializer<*>>> = emptyList()

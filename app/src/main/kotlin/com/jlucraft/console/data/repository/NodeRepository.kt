@@ -10,25 +10,22 @@ import com.jlucraft.console.data.remote.NetworkSnapshot
 import com.jlucraft.console.data.remote.PushPreferencesResponse
 import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 
-/**
- * Repository for cluster-level operations: health, network topology,
- * node scores, scheduling, push preferences, and event subscriptions.
+
  *
- */
 class NodeRepository(
     private val client: Libp2pClient
 ) {
-    // ── Cluster / network ──
+
 
     suspend fun getClusterHealth(): Result<ClusterHealthResponse> = client.getClusterHealth()
 
     suspend fun getNetworkSnapshot(): Result<NetworkSnapshot> = client.getNetworkSnapshot()
 
-    // ── Node scores ──
+
 
     suspend fun listNodeScores(): Result<List<NodeScore>> = client.listNodeScores()
 
-    // ── Scheduling ──
+
 
     suspend fun getSchedulingConstraints(instanceId: String): Result<SchedulingConstraints> =
         client.getSchedulingConstraints(instanceId)
@@ -39,7 +36,7 @@ class NodeRepository(
     suspend fun simulateScheduling(instanceId: String, constraints: SchedulingConstraints): Result<SchedulingSimulation> =
         client.simulateScheduling(instanceId, constraints)
 
-    // ── Push preferences ──
+
 
     suspend fun getPushPreferences(): Result<PushPreferencesResponse> = client.getPushPreferences()
 

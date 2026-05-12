@@ -45,7 +45,7 @@ fun DidResolutionScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Input field
+
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "输入 DID 进行解析",
@@ -78,7 +78,7 @@ fun DidResolutionScreen(
                 }
             )
 
-            // Quick actions
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -97,7 +97,7 @@ fun DidResolutionScreen(
                 }
             }
 
-            // Error display
+
             state.error?.let { errorMsg ->
                 Card(
                     colors = CardDefaults.cardColors(
@@ -114,7 +114,7 @@ fun DidResolutionScreen(
                 }
             }
 
-            // Success: DID Document display
+
             state.result?.let { result ->
                 when (result) {
                     is DidResolutionResult.Success -> {
@@ -124,12 +124,12 @@ fun DidResolutionScreen(
                         ServerErrorContent(result.error)
                     }
                     else -> {
-                        // Handled by error string above
+
                     }
                 }
             }
 
-            // Resolved JSON
+
             state.resolvedJson?.let { json ->
                 Text(
                     text = "DID 文档 JSON",

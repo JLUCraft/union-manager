@@ -1,9 +1,10 @@
 package com.jlucraft.console.viewmodel
 
 import com.jlucraft.console.data.auth.AuthCoordinator
+import com.jlucraft.console.data.model.GenericPushEventData
 import com.jlucraft.console.data.model.Instance
 import com.jlucraft.console.data.remote.PushService
-import com.jlucraft.console.data.repository.NodeRepository
+import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -18,7 +19,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
-import kotlinx.serialization.json.JsonObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,9 +33,9 @@ class InstancesViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
 
-    private lateinit var repository: NodeRepository
+    private lateinit var client: Libp2pClient
     private lateinit var authCoordinator: AuthCoordinator
-    private lateinit var pushEvents: MutableSharedFlow<PushService.WebSocketEvent>
+    private lateinit var pushEvents: MutableSharedFlow<PushService.PushEvent>
     private lateinit var pushService: PushService
 
     private lateinit var viewModel: InstancesViewModel
@@ -44,7 +44,7 @@ class InstancesViewModelTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
 
-        repository = mockk()
+        client = mockk()
         authCoordinator = mockk()
 
         pushEvents = MutableSharedFlow(replay = 0, extraBufferCapacity = 64)
@@ -54,9 +54,9 @@ class InstancesViewModelTest {
         coEvery { authCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns Result.success(Unit)
         every { authCoordinator.clearAuth() } just runs
 
-        coEvery { repository.getInstances() } returns Result.success(emptyList())
-        coEvery { repository.startInstance(any()) } returns Result.success(Unit)
-        coEvery { repository.stopInstance(any()) } returns Result.success(Unit)
+        coEvery { client.getInstances() } returns Result.success(emptyList())
+        coEvery { client.startInstance(any()) } returns Result.success(Unit)
+        coEvery { client.stopInstance(any()) } returns Result.success(Unit)
     }
 
     @After
@@ -66,7 +66,7 @@ class InstancesViewModelTest {
     }
 
     private fun createViewModel() {
-        viewModel = InstancesViewModel(repository, authCoordinator, pushService)
+        viewModel = InstancesViewModel(client, authCoordinator, pushService)
     }
 
     private fun createInstance(
@@ -94,137 +94,142 @@ class InstancesViewModelTest {
             )
         }
 
-    // ---------------------------------------------------------------
-    // Test 1: initial state loads instances
-    // ---------------------------------------------------------------
+    private fun makePushEvent(type: String) = PushService.PushEvent(
+        type = type,
+        data = GenericPushEventData(raw = "")
+    )
+
+
+
+
     @Test
     fun initial_state_loads_instances() {
         val instances = createInstances(3)
-        coEvery { repository.getInstances() } returns Result.success(instances)
+        coEvery { client.getInstances() } returns Result.success(instances)
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 1) { repository.getInstances() }
+        coVerify(exactly = 1) { client.getInstances() }
         assertEquals(3, viewModel.uiState.value.instances.size)
         assertFalse(viewModel.uiState.value.isLoading)
         assertNull(viewModel.uiState.value.error)
     }
 
-    // ---------------------------------------------------------------
-    // Test 2: refresh updates instances list
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun refresh_updates_instances_list() {
-        coEvery { repository.getInstances() } returns Result.success(createInstances(2))
+        coEvery { client.getInstances() } returns Result.success(createInstances(2))
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
         assertEquals(2, viewModel.uiState.value.instances.size)
 
-        coEvery { repository.getInstances() } returns Result.success(createInstances(4))
+        coEvery { client.getInstances() } returns Result.success(createInstances(4))
         viewModel.refresh()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { repository.getInstances() }
+        coVerify(exactly = 2) { client.getInstances() }
         assertEquals(4, viewModel.uiState.value.instances.size)
     }
 
-    // ---------------------------------------------------------------
-    // Test 3: push event instance_started triggers refresh
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun push_event_instance_started_triggers_refresh() {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
-        coVerify(exactly = 1) { repository.getInstances() }
+        coVerify(exactly = 1) { client.getInstances() }
 
-        pushEvents.tryEmit(PushService.WebSocketEvent("instance_started", JsonObject(emptyMap())))
+        pushEvents.tryEmit(makePushEvent("instance_started"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { repository.getInstances() }
+        coVerify(exactly = 2) { client.getInstances() }
     }
 
-    // ---------------------------------------------------------------
-    // Test 4: push event instance_stopped triggers refresh
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun push_event_instance_stopped_triggers_refresh() {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
-        coVerify(exactly = 1) { repository.getInstances() }
+        coVerify(exactly = 1) { client.getInstances() }
 
-        pushEvents.tryEmit(PushService.WebSocketEvent("instance_stopped", JsonObject(emptyMap())))
+        pushEvents.tryEmit(makePushEvent("instance_stopped"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { repository.getInstances() }
+        coVerify(exactly = 2) { client.getInstances() }
     }
 
-    // ---------------------------------------------------------------
-    // Test 5: push event instance_crash triggers refresh
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun push_event_instance_crash_triggers_refresh() {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
-        coVerify(exactly = 1) { repository.getInstances() }
+        coVerify(exactly = 1) { client.getInstances() }
 
-        pushEvents.tryEmit(PushService.WebSocketEvent("instance_crash", JsonObject(emptyMap())))
+        pushEvents.tryEmit(makePushEvent("instance_crash"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { repository.getInstances() }
+        coVerify(exactly = 2) { client.getInstances() }
     }
 
-    // ---------------------------------------------------------------
-    // Test 6: push event instance_created triggers refresh
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun push_event_instance_created_triggers_refresh() {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
-        coVerify(exactly = 1) { repository.getInstances() }
+        coVerify(exactly = 1) { client.getInstances() }
 
-        pushEvents.tryEmit(PushService.WebSocketEvent("instance_created", JsonObject(emptyMap())))
+        pushEvents.tryEmit(makePushEvent("instance_created"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { repository.getInstances() }
+        coVerify(exactly = 2) { client.getInstances() }
     }
 
-    // ---------------------------------------------------------------
-    // Test 7: push event instance_deleted triggers refresh
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun push_event_instance_deleted_triggers_refresh() {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
-        coVerify(exactly = 1) { repository.getInstances() }
+        coVerify(exactly = 1) { client.getInstances() }
 
-        pushEvents.tryEmit(PushService.WebSocketEvent("instance_deleted", JsonObject(emptyMap())))
+        pushEvents.tryEmit(makePushEvent("instance_deleted"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { repository.getInstances() }
+        coVerify(exactly = 2) { client.getInstances() }
     }
 
-    // ---------------------------------------------------------------
-    // Test 8: non-matching push event does NOT refresh
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun non_matching_push_event_does_not_refresh() {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
-        coVerify(exactly = 1) { repository.getInstances() }
+        coVerify(exactly = 1) { client.getInstances() }
 
-        pushEvents.tryEmit(PushService.WebSocketEvent("unrelated_event", JsonObject(emptyMap())))
+        pushEvents.tryEmit(makePushEvent("unrelated_event"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 1) { repository.getInstances() }
+        coVerify(exactly = 1) { client.getInstances() }
     }
 
-    // ---------------------------------------------------------------
-    // Test 9: start instance calls repository correctly
-    // ---------------------------------------------------------------
+
+
+
     @Test
-    fun start_instance_calls_repository_correctly() {
+    fun start_instance_calls_client_correctly() {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -234,14 +239,14 @@ class InstancesViewModelTest {
         coVerify(exactly = 1) {
             authCoordinator.authenticateForOperation("start-instance", any(), "启动实例", "请验证身份以启动实例")
         }
-        coVerify(exactly = 1) { repository.startInstance("inst-1") }
+        coVerify(exactly = 1) { client.startInstance("inst-1") }
     }
 
-    // ---------------------------------------------------------------
-    // Test 10: stop instance calls repository correctly
-    // ---------------------------------------------------------------
+
+
+
     @Test
-    fun stop_instance_calls_repository_correctly() {
+    fun stop_instance_calls_client_correctly() {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -251,12 +256,12 @@ class InstancesViewModelTest {
         coVerify(exactly = 1) {
             authCoordinator.authenticateForOperation("stop-instance", any(), "停止实例", "请验证身份以停止实例")
         }
-        coVerify(exactly = 1) { repository.stopInstance("inst-2") }
+        coVerify(exactly = 1) { client.stopInstance("inst-2") }
     }
 
-    // ---------------------------------------------------------------
-    // Test 11: batch mode toggle works
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun batch_mode_toggle_works() {
         createViewModel()
@@ -274,9 +279,9 @@ class InstancesViewModelTest {
         assertTrue(viewModel.uiState.value.selectedInstanceIds.isEmpty())
     }
 
-    // ---------------------------------------------------------------
-    // Test 12: selection toggle works (add, remove, limit 20)
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun selection_toggle_adds_and_removes_instances() {
         createViewModel()
@@ -321,13 +326,13 @@ class InstancesViewModelTest {
         assertTrue(viewModel.uiState.value.selectedInstanceIds.contains("inst-2"))
     }
 
-    // ---------------------------------------------------------------
-    // Test 13: selectAllInstances caps at 20
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun selectAllInstances_caps_at_20() {
         val instances = createInstances(25)
-        coEvery { repository.getInstances() } returns Result.success(instances)
+        coEvery { client.getInstances() } returns Result.success(instances)
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -340,7 +345,7 @@ class InstancesViewModelTest {
     @Test
     fun selectAllInstances_selects_all_when_less_than_20() {
         val instances = createInstances(5)
-        coEvery { repository.getInstances() } returns Result.success(instances)
+        coEvery { client.getInstances() } returns Result.success(instances)
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -350,12 +355,12 @@ class InstancesViewModelTest {
         assertEquals(instances.map { it.id }.toSet(), viewModel.uiState.value.selectedInstanceIds)
     }
 
-    // ---------------------------------------------------------------
-    // Test 14: error state is handled
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun error_state_is_handled() {
-        coEvery { repository.getInstances() } returns Result.failure(Exception("Network error"))
+        coEvery { client.getInstances() } returns Result.failure(Exception("Network error"))
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -368,7 +373,7 @@ class InstancesViewModelTest {
 
     @Test
     fun auth_error_is_set_on_operation_failure() {
-        coEvery { repository.getInstances() } returns Result.success(emptyList())
+        coEvery { client.getInstances() } returns Result.success(emptyList())
         coEvery { authCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns
             Result.failure(Exception("认证失败"))
 
@@ -384,10 +389,10 @@ class InstancesViewModelTest {
     }
 
     @Test
-    fun operation_error_is_set_on_repository_failure() {
-        coEvery { repository.getInstances() } returns Result.success(emptyList())
+    fun operation_error_is_set_on_client_failure() {
+        coEvery { client.getInstances() } returns Result.success(emptyList())
         coEvery { authCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns Result.success(Unit)
-        coEvery { repository.startInstance("inst-bad") } returns Result.failure(Exception("启动失败"))
+        coEvery { client.startInstance("inst-bad") } returns Result.failure(Exception("启动失败"))
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -400,12 +405,12 @@ class InstancesViewModelTest {
         assertNull(viewModel.uiState.value.authError)
     }
 
-    // ---------------------------------------------------------------
-    // Test 15: loading state is handled
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun loading_state_is_set_to_true_during_refresh() {
-        coEvery { repository.getInstances() } coAnswers {
+        coEvery { client.getInstances() } coAnswers {
             delay(Long.MAX_VALUE)
             Result.success(emptyList())
         }
@@ -417,7 +422,7 @@ class InstancesViewModelTest {
 
     @Test
     fun loading_state_clears_on_error() {
-        coEvery { repository.getInstances() } returns Result.failure(Exception("fail"))
+        coEvery { client.getInstances() } returns Result.failure(Exception("fail"))
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -426,13 +431,13 @@ class InstancesViewModelTest {
         assertNotNull(viewModel.uiState.value.error)
     }
 
-    // ---------------------------------------------------------------
-    // Edge case: clear selection
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun clearSelection_resets_selection() {
         val instances = createInstances(1)
-        coEvery { repository.getInstances() } returns Result.success(instances)
+        coEvery { client.getInstances() } returns Result.success(instances)
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -445,12 +450,12 @@ class InstancesViewModelTest {
         assertNull(viewModel.uiState.value.selectedInstance)
     }
 
-    // ---------------------------------------------------------------
-    // Edge case: clearAuthError and clearOperationError
-    // ---------------------------------------------------------------
+
+
+
     @Test
     fun clearAuthError_resets_auth_error() {
-        coEvery { repository.getInstances() } returns Result.success(emptyList())
+        coEvery { client.getInstances() } returns Result.success(emptyList())
         coEvery { authCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns
             Result.failure(Exception("认证失败"))
 
@@ -468,9 +473,9 @@ class InstancesViewModelTest {
 
     @Test
     fun clearOperationError_resets_operation_error() {
-        coEvery { repository.getInstances() } returns Result.success(emptyList())
+        coEvery { client.getInstances() } returns Result.success(emptyList())
         coEvery { authCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns Result.success(Unit)
-        coEvery { repository.startInstance(any()) } returns Result.failure(Exception("op fail"))
+        coEvery { client.startInstance(any()) } returns Result.failure(Exception("op fail"))
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()

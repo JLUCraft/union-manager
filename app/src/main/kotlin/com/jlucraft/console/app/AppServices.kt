@@ -15,12 +15,8 @@ import com.jlucraft.console.data.repository.OracleRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Compatibility facade for UI screens that receive [AppServices].
- * All instances are injected by Hilt; no manual construction.
+
  *
- * There is no server URL — the peer connects via configured bootstrap peers.
- */
 @Singleton
 class AppServices @Inject constructor(
     val settingsStore: SettingsStore,

@@ -119,7 +119,7 @@ fun SeasonScreen(
                 )
             }
 
-            // Leaderboard for selected season
+
             state.selectedSeason?.let { season ->
                 item {
                     Text(

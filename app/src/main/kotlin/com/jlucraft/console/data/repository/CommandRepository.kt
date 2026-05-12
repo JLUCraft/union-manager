@@ -7,14 +7,8 @@ import com.jlucraft.console.data.remote.AuthRequest
 import com.jlucraft.console.data.remote.CommandResult
 import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 
-/**
- * Canonical command executor using protobuf over libp2p.
+
  *
- * Three-step flow:
- *   1. CreateCommand on /control/v1 → receive AuthChallenge
- *   2. TEE-sign the canonical challenge message
- *   3. RespondCommand on /control/v1 → receive CommandResult
- */
 class CommandRepository(
     private val client: Libp2pClient,
     private val teeAuth: TeeAuthManager

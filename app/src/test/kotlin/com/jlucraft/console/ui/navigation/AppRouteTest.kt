@@ -5,9 +5,9 @@ import org.junit.Test
 
 class AppRouteTest {
 
-    // ------------------------------------------------------------------ //
-    // Route existence
-    // ------------------------------------------------------------------ //
+
+
+
 
     @Test
     fun `all main tab routes exist`() {
@@ -48,9 +48,9 @@ class AppRouteTest {
         assertFalse("DidResolution must not be a bottom tab", AppRoute.DidResolution in tabRoutes)
     }
 
-    // ------------------------------------------------------------------ //
-    // Route identity
-    // ------------------------------------------------------------------ //
+
+
+
 
     @Test
     fun `route identity is stable`() {
@@ -70,15 +70,15 @@ class AppRouteTest {
 
     @Test
     fun `serializable annotation present on AppRoute`() {
-        // Verify the sealed interface has @Serializable
+
         val annotations = AppRoute::class.java.annotations
         val hasSerializable = annotations.any { it.annotationClass.qualifiedName == "kotlinx.serialization.Serializable" }
         assertTrue("AppRoute must be @Serializable for navigation3 typed routes", hasSerializable)
     }
 
-    // ------------------------------------------------------------------ //
-    // Tab consistency
-    // ------------------------------------------------------------------ //
+
+
+
 
     @Test
     fun `tabs have all six entries`() {

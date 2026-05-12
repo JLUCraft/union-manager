@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.auth.TeeAuthManager
 import com.jlucraft.console.data.model.AuthPayload
 import com.jlucraft.console.data.remote.AuthChallenge
@@ -13,14 +14,8 @@ import com.jlucraft.console.data.repository.CommandRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * UI state for the [AuthChallengeSheet] driven by [CommandRepository].
+
  *
- * @property challenge the pending challenge (null if idle)
- * @property countdownSeconds remaining TTL in seconds for the countdown timer
- * @property resultMessage message after command execution (success or error)
- * @property isExecuting true while the sign+respond step is in flight
- */
 data class CommandUiState(
     val challenge: AuthChallenge? = null,
     val countdownSeconds: Long = 0,
@@ -28,34 +23,37 @@ data class CommandUiState(
     val isExecuting: Boolean = false
 )
 
-/**
- * ViewModel that wraps [CommandRepository] for Compose UI consumption.
+
  *
- * Provides the canonical three-step signed command flow:
- *   1. create → display challenge in AuthChallengeSheet
- *   2. user confirms → TEE-sign the canonical message
- *   3. respond → show CommandResult
- */
 @HiltViewModel
 class CommandViewModel @Inject constructor(
     private val commandRepository: CommandRepository,
-    private val teeAuth: TeeAuthManager
+    private val teeAuth: TeeAuthManager,
+    private val authCoordinator: AuthCoordinator
 ) : ViewModel() {
 
     private val _uiState = mutableStateOf(CommandUiState())
     val uiState: State<CommandUiState> = _uiState
 
-    /**
-     * Initiate a signed command. Creates a server challenge and populates
-     * the UI state so [AuthChallengeSheet] can render it.
-     */
+
     fun initiateCommand(
         cmdType: String,
         payload: AuthPayload
     ) {
+        val writeCapability = authCoordinator.requireWriteCapability()
+        if (writeCapability.isFailure) {
+            _uiState.value = CommandUiState(resultMessage = writeCapability.exceptionOrNull()?.message)
+            return
+        }
         viewModelScope.launch {
             _uiState.value = CommandUiState(isExecuting = true)
-            val publicKey = teeAuth.getPublicKey()
+            val publicKey = teeAuth.tryGetPublicKey().getOrElse {
+                _uiState.value = CommandUiState(
+                    resultMessage = authCoordinator.requireWriteCapability().exceptionOrNull()?.message
+                        ?: "设备公钥不可用"
+                )
+                return@launch
+            }
 
             val challengeResult = commandRepository.createChallenge(
                 cmdType = cmdType,
@@ -78,15 +76,18 @@ class CommandViewModel @Inject constructor(
         }
     }
 
-    /**
-     * User confirms the challenge in the UI → TEE-sign + submit response.
-     * Called from [AuthChallengeSheet]'s confirm button.
-     */
+
     fun confirmChallenge() {
         val challenge = _uiState.value.challenge ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isExecuting = true)
-            val publicKey = teeAuth.getPublicKey()
+            val publicKey = teeAuth.tryGetPublicKey().getOrElse {
+                _uiState.value = CommandUiState(
+                    resultMessage = authCoordinator.requireWriteCapability().exceptionOrNull()?.message
+                        ?: "设备公钥不可用"
+                )
+                return@launch
+            }
 
             val result = commandRepository.signAndRespond(
                 deviceId = publicKey,
@@ -107,15 +108,13 @@ class CommandViewModel @Inject constructor(
         }
     }
 
-    /**
-     * User cancels the challenge → clear pending state.
-     */
+
     fun cancelChallenge() {
         commandRepository.clearPendingChallenge()
         _uiState.value = CommandUiState()
     }
 
-    /** Dismiss the result message banner. */
+
     fun clearResult() {
         _uiState.value = _uiState.value.copy(resultMessage = null)
     }
@@ -130,7 +129,7 @@ class CommandViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(countdownSeconds = remaining)
                 }
             }
-            // Challenge expired
+
             if (remaining <= 0 && _uiState.value.challenge != null) {
                 commandRepository.clearPendingChallenge()
                 _uiState.value = CommandUiState(resultMessage = "挑战已过期，请重新发起操作")

@@ -6,12 +6,8 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * DESIGN.md §7.6: Unit tests for the canonical challenge message builder.
+
  *
- * Tests the pure message construction function without requiring real
- * TEE hardware, isolating the format contract from Android Keystore signing.
- */
 class TeeAuthManagerCanonicalMessageTest {
 
     @Test
@@ -54,9 +50,9 @@ class TeeAuthManagerCanonicalMessageTest {
         val message = TeeAuthManager.buildCanonicalChallengeMessage(challenge)
         val messageStr = String(message, Charsets.UTF_8)
 
-        // The payload_hash must appear verbatim in the message
+
         assertTrue(messageStr.contains("deadbeef/cafe+babe=01234"))
-        // The separators must be literal "||"
+
         assertTrue(messageStr.contains("||n-2||grant-role||"))
     }
 
@@ -77,7 +73,7 @@ class TeeAuthManagerCanonicalMessageTest {
 
         val message = TeeAuthManager.buildCanonicalChallengeMessage(challenge)
 
-        // Verify it's valid UTF-8
+
         val messageStr = String(message, Charsets.UTF_8)
         assertEquals(message.size, messageStr.toByteArray(Charsets.UTF_8).size)
     }
@@ -160,7 +156,7 @@ class TeeAuthManagerCanonicalMessageTest {
         )
 
         val message = String(TeeAuthManager.buildCanonicalChallengeMessage(challenge), Charsets.UTF_8)
-        // There should be exactly 6 fields separated by 5 "||" pairs
+
         val parts = message.split("||")
         assertEquals(6, parts.size)
         assertEquals("JLUCraftAuthV1", parts[0])

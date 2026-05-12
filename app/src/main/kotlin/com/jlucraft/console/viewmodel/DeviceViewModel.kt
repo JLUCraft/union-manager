@@ -7,9 +7,11 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import com.jlucraft.console.data.auth.AuthCoordinator
+import com.jlucraft.console.data.model.EmergencyRevokeDevicePayload
 import com.jlucraft.console.data.model.RevokeDevicePayload
 import com.jlucraft.console.data.auth.TeeAuthManager
-import com.jlucraft.console.data.auth.withAuthenticatedOperation
+import com.jlucraft.console.data.auth.ReadOnlyMode
+import com.jlucraft.console.data.auth.withAuthenticatedOperationUsingDeviceKey
 import com.jlucraft.console.data.model.Device
 import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 import kotlinx.coroutines.launch
@@ -56,42 +58,37 @@ class DeviceViewModel @Inject constructor(
     }
 
     fun revokeDevice(pubkey: String, reason: String) {
-        val revokedBy = teeAuth.getPublicKey()
         performRevocation(
             pubkey = pubkey,
             reason = reason,
-            revokedBy = revokedBy,
             cmdType = "revoke-device",
             title = "吊销设备",
             subtitle = "请验证身份以执行此操作",
             successMessage = "设备已吊销",
-            revokeCall = { client.revokeDevice(pubkey, reason, revokedBy) }
+            revokeCall = { revokedBy -> client.revokeDevice(pubkey, reason, revokedBy) }
         )
     }
 
     fun emergencyRevokeDevice(pubkey: String, reason: String) {
-        val revokedBy = teeAuth.getPublicKey()
         performRevocation(
             pubkey = pubkey,
             reason = reason,
-            revokedBy = revokedBy,
             cmdType = "emergency-revoke-device",
             title = "紧急吊销设备",
             subtitle = "请验证身份以执行此操作",
             successMessage = "设备已紧急吊销",
-            revokeCall = { client.emergencyRevokeDevice(pubkey, reason, revokedBy) }
+            revokeCall = { revokedBy -> client.emergencyRevokeDevice(pubkey, reason, revokedBy) }
         )
     }
 
     private fun performRevocation(
         pubkey: String,
         reason: String,
-        revokedBy: String,
         cmdType: String,
         title: String,
         subtitle: String,
         successMessage: String,
-        revokeCall: suspend () -> Result<Device>
+        revokeCall: suspend (revokedBy: String) -> Result<Device>
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
@@ -101,14 +98,19 @@ class DeviceViewModel @Inject constructor(
                 revokeError = null
             )
 
-            val payload = RevokeDevicePayload(pubkey, reason, revokedBy)
-            val wrappedResult = authCoordinator.withAuthenticatedOperation(
+            val wrappedResult = authCoordinator.withAuthenticatedOperationUsingDeviceKey(
                 cmdType = cmdType,
-                payload = payload,
+                payload = { revokedBy ->
+                    if (cmdType == "emergency-revoke-device") {
+                        EmergencyRevokeDevicePayload(pubkey, reason, revokedBy)
+                    } else {
+                        RevokeDevicePayload(pubkey, reason, revokedBy)
+                    }
+                },
                 title = title,
                 subtitle = subtitle
-            ) {
-                revokeCall()
+            ) { revokedBy ->
+                revokeCall(revokedBy)
             }
 
             if (wrappedResult.isFailure) {
@@ -134,7 +136,17 @@ class DeviceViewModel @Inject constructor(
         }
     }
 
-    fun getCurrentPubkey(): String = teeAuth.getPublicKey()
+    fun getCurrentPubkey(): String? = teeAuth.tryGetPublicKey().getOrNull()
+
+    fun currentReadOnlyMode(): ReadOnlyMode =
+        if (teeAuth.isTeeBacked) {
+            ReadOnlyMode.ReadWrite
+        } else {
+            ReadOnlyMode.ReadOnly(
+                (teeAuth.capability as? com.jlucraft.console.data.auth.TeeCapability.NoHardwareBackedKey)?.reason
+                    ?: "TEE 不可用"
+            )
+        }
 
     fun clearRevokeStatus() {
         _uiState.value = _uiState.value.copy(revokeSuccess = null, revokeError = null)

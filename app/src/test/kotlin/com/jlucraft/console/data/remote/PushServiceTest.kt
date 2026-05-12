@@ -1,5 +1,6 @@
 package com.jlucraft.console.data.remote
 
+import com.jlucraft.console.data.model.PushEventPayload
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
@@ -19,41 +20,21 @@ class PushServiceTest {
     }
 
     @Test
-    fun `test_connect_forwards_unionpush_events`() = runTest {
-        val service = PushService()
-        service.connect()
-
-        // Emit a test event through UnionPushReceiver's shared flow
-        val testEvent = PushService.WebSocketEvent(
-            type = "test_event",
-            data = buildJsonObject { put("key", "value") }
-        )
-        UnionPushReceiver.pushEvents.let { flow ->
-            // The flow is backed by MutableSharedFlow; we emit via tryEmit.
-            // In tests, we use the companion's internal flow directly.
-            // Since we can't access _pushEvents directly, we test the integration indirectly.
-        }
-
-        service.disconnect()
-    }
-
-    @Test
     fun `test_connect_is_idempotent`() {
         val service = PushService()
         service.connect()
-        service.connect() // second call should not crash or create duplicate jobs
+        service.connect()
         service.disconnect()
     }
 
     @Test
     fun `test_disconnect_before_connect_is_safe`() {
         val service = PushService()
-        service.disconnect() // should not crash
+        service.disconnect()
     }
 
     @Test
     fun `test_no_ws_url_construction`() {
-        // Verify PushService no longer has wsUrl method or Ktor WebSocket logic
         val service = PushService()
         val methods = PushService::class.java.declaredMethods.map { it.name }
         assertTrue("wsUrl should not exist", "wsUrl" !in methods)
@@ -67,12 +48,13 @@ class PushServiceTest {
     }
 
     @Test
-    fun `test_web_socket_event_data_class`() {
-        val event = PushService.WebSocketEvent(
+    fun `test_push_event_data_class`() {
+        val testPayload = com.jlucraft.console.data.model.GenericPushEventData(raw = "test")
+        val event = PushService.PushEvent(
             type = "auth_challenge",
-            data = buildJsonObject { put("nonce", "abc123") }
+            data = testPayload
         )
         assertEquals("auth_challenge", event.type)
-        assertEquals("abc123", event.data["nonce"]?.toString()?.replace("\"", ""))
+        assertEquals(testPayload, event.data)
     }
 }

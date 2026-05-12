@@ -2,7 +2,7 @@ package com.jlucraft.console.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// ── Light scheme (seed: #00696A teal) ─────────────────────────────────────
+
 val md_light_primary              = Color(0xFF00696A)
 val md_light_onPrimary            = Color(0xFFFFFFFF)
 val md_light_primaryContainer     = Color(0xFF9EF0EF)
@@ -32,7 +32,7 @@ val md_light_inverseOnSurface     = Color(0xFFEFF1F0)
 val md_light_inversePrimary       = Color(0xFF80D5D3)
 val md_light_surfaceTint          = Color(0xFF00696A)
 
-// ── Dark scheme ────────────────────────────────────────────────────────────
+
 val md_dark_primary               = Color(0xFF80D5D3)
 val md_dark_onPrimary             = Color(0xFF003737)
 val md_dark_primaryContainer      = Color(0xFF005050)
@@ -62,8 +62,8 @@ val md_dark_inverseOnSurface      = Color(0xFF2E3131)
 val md_dark_inversePrimary        = Color(0xFF00696A)
 val md_dark_surfaceTint           = Color(0xFF80D5D3)
 
-// ── Semantic status colors (app-specific, not M3 role tokens) ─────────────
-val StatusGreen  = Color(0xFF52C77A)  // online / success
-val StatusAmber  = Color(0xFFFFC107)  // warning / degraded
-val StatusBlue   = Color(0xFF4FC3F7)  // info
-val StatusRed    = Color(0xFFFF5252)  // offline / error accent
+
+val StatusGreen  = Color(0xFF52C77A)
+val StatusAmber  = Color(0xFFFFC107)
+val StatusBlue   = Color(0xFF4FC3F7)
+val StatusRed    = Color(0xFFFF5252)

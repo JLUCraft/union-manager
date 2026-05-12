@@ -9,6 +9,8 @@ import javax.inject.Inject
 import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.auth.withAuthenticatedOperation
 import com.jlucraft.console.data.auth.BiometricAuthManager
+import com.jlucraft.console.data.auth.withAuthenticatedOperationUsingDeviceKey
+import com.jlucraft.console.data.model.EmergencyRevokeDevicePayload
 import com.jlucraft.console.data.model.RevokeDevicePayload
 import com.jlucraft.console.data.auth.TeeAuthManager
 import com.jlucraft.console.data.auth.TeeCapability
@@ -32,7 +34,7 @@ data class SettingsUiState(
     val devicesLoading: Boolean = false,
     val devicesError: String? = null,
     val revokeSuccess: String? = null,
-    // Push preferences
+
     val pushEnabledEventTypes: Set<String> = SettingsStore.DEFAULT_ENABLED_EVENT_TYPES,
     val dndEnabled: Boolean = false,
     val dndStartHour: Int = 22,
@@ -101,7 +103,7 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(biometricResult = null)
     }
 
-    // --- Device management ---
+
 
     fun loadDevices() {
         viewModelScope.launch {
@@ -123,53 +125,53 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun revokeDevice(pubkey: String, reason: String) {
-        val revokedBy = teeAuth.getPublicKey()
         performRevocation(
             pubkey = pubkey,
             reason = reason,
-            revokedBy = revokedBy,
             cmdType = "revoke-device",
             title = "吊销设备",
             subtitle = "请验证身份以吊销该设备",
             successMessage = "设备已吊销",
-            revokeCall = { client.revokeDevice(pubkey, reason, revokedBy) }
+            revokeCall = { revokedBy -> client.revokeDevice(pubkey, reason, revokedBy) }
         )
     }
 
     fun emergencyRevokeDevice(pubkey: String, reason: String) {
-        val revokedBy = teeAuth.getPublicKey()
         performRevocation(
             pubkey = pubkey,
             reason = reason,
-            revokedBy = revokedBy,
             cmdType = "emergency-revoke-device",
             title = "紧急吊销设备",
             subtitle = "请验证身份以紧急吊销该设备",
             successMessage = "设备已紧急吊销",
-            revokeCall = { client.emergencyRevokeDevice(pubkey, reason, revokedBy) }
+            revokeCall = { revokedBy -> client.emergencyRevokeDevice(pubkey, reason, revokedBy) }
         )
     }
 
     private fun performRevocation(
         pubkey: String,
         reason: String,
-        revokedBy: String,
         cmdType: String,
         title: String,
         subtitle: String,
         successMessage: String,
-        revokeCall: suspend () -> Result<Device>
+        revokeCall: suspend (revokedBy: String) -> Result<Device>
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(devicesLoading = true, devicesError = null, revokeSuccess = null)
 
-            val payload = RevokeDevicePayload(pubkey, reason, revokedBy)
-            val wrappedResult: Result<Result<Device>> = authCoordinator.withAuthenticatedOperation(
+            val wrappedResult: Result<Result<Device>> = authCoordinator.withAuthenticatedOperationUsingDeviceKey(
                 cmdType = cmdType,
-                payload = payload,
+                payload = { revokedBy ->
+                    if (cmdType == "emergency-revoke-device") {
+                        EmergencyRevokeDevicePayload(pubkey, reason, revokedBy)
+                    } else {
+                        RevokeDevicePayload(pubkey, reason, revokedBy)
+                    }
+                },
                 title = title,
                 subtitle = subtitle,
-                operation = revokeCall
+                operation = { revokedBy -> revokeCall(revokedBy) }
             )
 
             if (wrappedResult.isFailure) {
@@ -199,7 +201,7 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(revokeSuccess = null)
     }
 
-    // --- Push preferences ---
+
 
     fun loadPushPreferences() {
         viewModelScope.launch {
@@ -250,7 +252,7 @@ class SettingsViewModel @Inject constructor(
                     settingsStore.setDndStartHour(prefs.dndStartHour)
                     settingsStore.setDndEndHour(prefs.dndEndHour)
                 }
-                .onFailure { /* silently ignore server fetch failures */ }
+                .onFailure {  }
         }
     }
 
@@ -314,7 +316,7 @@ class SettingsViewModel @Inject constructor(
 
                 val result: Result<PushPreferencesResponse> = wrappedResult.getOrThrow()
                 result
-                    .onFailure { /* silently ignore server errors if local persisted */ }
+                    .onFailure {  }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(pushPrefsError = e.message)
             }

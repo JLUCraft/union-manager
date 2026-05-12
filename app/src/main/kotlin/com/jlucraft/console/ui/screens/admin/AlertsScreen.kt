@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -19,7 +20,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jlucraft.console.app.AppServices
+import com.jlucraft.console.data.auth.AuthStateHolder
+import com.jlucraft.console.data.auth.ReadOnlyMode
 import com.jlucraft.console.data.model.Alert
+import com.jlucraft.console.ui.components.ReadOnlyModeBanner
 import com.jlucraft.console.ui.components.listStatePlaceholders
 import com.jlucraft.console.ui.theme.StatusAmber
 import com.jlucraft.console.ui.theme.StatusGreen
@@ -34,6 +38,8 @@ fun AlertsScreen(
     viewModel: AlertsViewModel = viewModel(),
 ) {
     val state = viewModel.uiState.value
+    val readOnlyState by AuthStateHolder.readOnlyMode.collectAsState()
+    val isReadOnly = readOnlyState is ReadOnlyMode.ReadOnly
     var showFilterMenu by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -115,6 +121,12 @@ fun AlertsScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (isReadOnly) {
+                item {
+                    ReadOnlyModeBanner(readOnlyState)
+                }
+            }
+
             item {
                 val counts = remember(state.alerts) {
                     val bySeverity = state.alerts.groupBy { it.severity }
@@ -138,6 +150,7 @@ fun AlertsScreen(
                 AlertCard(
                     alert = alert,
                     isActionLoading = state.actionLoading == alert.id,
+                    readOnly = isReadOnly,
                     onAcknowledge = { viewModel.acknowledgeAlert(alert.id) },
                     onResolve = { viewModel.resolveAlert(alert.id) }
                 )
@@ -150,6 +163,7 @@ fun AlertsScreen(
 private fun AlertCard(
     alert: Alert,
     isActionLoading: Boolean = false,
+    readOnly: Boolean = false,
     onAcknowledge: () -> Unit = {},
     onResolve: () -> Unit = {}
 ) {
@@ -230,8 +244,8 @@ private fun AlertCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // Action buttons for unresolved alerts
-            if (!isResolved) {
+
+            if (!isResolved && !readOnly) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),

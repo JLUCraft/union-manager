@@ -9,18 +9,12 @@ import com.jlucraft.console.data.remote.PushConfigResponse
 import com.jlucraft.console.data.remote.PushPreferencesResponse
 import com.jlucraft.console.data.remote.SignResponse
 
-/**
- * Sealed hierarchy mirroring the protobuf `ControlRequest` oneof body
- * from `jlucraft.control.v1.ControlRequest`.
+
  *
- * Each variant corresponds to a single RPC method in the libp2p
- * `/control/v1` protocol. The [authContext] is carried on all write
- * (mutating) requests; read-only requests may omit it.
- */
 sealed class ControlRequest {
     abstract val requestId: String
 
-    // ── Instance & scheduling ──
+
     data class CreateInstance(val request: CreateInstanceRequest, override val requestId: String) : ControlRequest()
     data class ListInstances(override val requestId: String) : ControlRequest()
     data class GetInstance(val instanceId: String, override val requestId: String) : ControlRequest()
@@ -32,24 +26,23 @@ sealed class ControlRequest {
     data class UpdateAdmission(val instanceId: String, val policy: AdmissionPolicy, override val requestId: String) : ControlRequest()
     data class CheckAdmission(val instanceId: String, val playerPeerId: String?, val playerClub: String?, val hasVc: Boolean, override val requestId: String) : ControlRequest()
     data class GetInstanceLogs(val instanceId: String, val tail: Int?, val keyword: String?, override val requestId: String) : ControlRequest()
-    data class StreamInstanceLogs(val instanceId: String, val follow: Boolean, override val requestId: String) : ControlRequest()
     data class GetSchedulingConstraints(val instanceId: String, override val requestId: String) : ControlRequest()
     data class ApplySchedulingConstraints(val request: ApplySchedulingConstraintsRequest, override val requestId: String) : ControlRequest()
     data class SimulateScheduling(val instanceId: String, val constraints: SchedulingConstraints, override val requestId: String) : ControlRequest()
 
-    // ── Cluster / network ──
+
     data class GetClusterHealth(override val requestId: String) : ControlRequest()
     data class GetNetwork(override val requestId: String) : ControlRequest()
 
-    // ── Auth ──
+
     data class RequestChallenge(val authRequest: AuthRequest, override val requestId: String) : ControlRequest()
     data class VerifySignature(val signResponse: SignResponse, override val requestId: String) : ControlRequest()
 
-    // ── Commands ──
+
     data class CreateCommand(val authRequest: AuthRequest, override val requestId: String) : ControlRequest()
     data class RespondCommand(val challengeId: String, val signResponse: SignResponse, override val requestId: String) : ControlRequest()
 
-    // ── Proposals ──
+
     data class ListProposals(override val requestId: String) : ControlRequest()
     data class GetProposal(val proposalId: String, override val requestId: String) : ControlRequest()
     data class CreateProposal(val proposalType: String, val payload: ProposalPayload, val proposer: String, override val requestId: String) : ControlRequest()
@@ -59,17 +52,17 @@ sealed class ControlRequest {
     data class CreateProposalDraft(val proposalType: String, val payload: ProposalPayload, val proposer: String, override val requestId: String) : ControlRequest()
     data class SubmitProposalDraft(val draftId: String, override val requestId: String) : ControlRequest()
 
-    // ── Audit ──
+
     data class ListAuditEntries(val cmdType: String?, val limit: Int, override val requestId: String) : ControlRequest()
     data class VerifyAuditChain(override val requestId: String) : ControlRequest()
     data class ListAuditAnomalies(override val requestId: String) : ControlRequest()
 
-    // ── Alerts ──
+
     data class ListAlerts(val severity: String?, val includeResolved: Boolean, override val requestId: String) : ControlRequest()
     data class AcknowledgeAlert(val alertId: String, override val requestId: String) : ControlRequest()
     data class ResolveAlert(val alertId: String, override val requestId: String) : ControlRequest()
 
-    // ── Tournaments / matches / teams ──
+
     data class ListTournaments(override val requestId: String) : ControlRequest()
     data class GetTournament(val tournamentId: String, override val requestId: String) : ControlRequest()
     data class CreateTournament(val request: CreateTournamentRequest, override val requestId: String) : ControlRequest()
@@ -77,12 +70,12 @@ sealed class ControlRequest {
     data class ListTournamentMatches(val tournamentId: String, override val requestId: String) : ControlRequest()
     data class ListTeams(override val requestId: String) : ControlRequest()
 
-    // ── Disputes ──
+
     data class ListDisputes(val tournamentId: String?, override val requestId: String) : ControlRequest()
     data class GetDispute(val disputeId: String, override val requestId: String) : ControlRequest()
     data class CreateDispute(val tournamentId: String, val request: CreateDisputeRequest, override val requestId: String) : ControlRequest()
 
-    // ── Seasons ──
+
     data class ListSeasons(override val requestId: String) : ControlRequest()
     data class GetSeason(val seasonId: String, override val requestId: String) : ControlRequest()
     data class GetCurrentSeason(override val requestId: String) : ControlRequest()
@@ -90,12 +83,18 @@ sealed class ControlRequest {
     data class ArchiveSeason(val seasonId: String, override val requestId: String) : ControlRequest()
     data class CreateSeason(val name: String, val startDate: String, val endDate: String, override val requestId: String) : ControlRequest()
 
-    // ── Devices ──
+
+    data class PauseMatch(val matchId: String, override val requestId: String) : ControlRequest()
+    data class ResumeMatch(val matchId: String, override val requestId: String) : ControlRequest()
+    data class ResetMatch(val matchId: String, override val requestId: String) : ControlRequest()
+    data class JudgeMatch(val matchId: String, val winnerId: String, val reason: String, override val requestId: String) : ControlRequest()
+
+
     data class ListDevices(override val requestId: String) : ControlRequest()
     data class RevokeDevice(val pubkey: String, val reason: String, val revokedBy: String, override val requestId: String) : ControlRequest()
     data class EmergencyRevokeDevice(val pubkey: String, val reason: String, val revokedBy: String, override val requestId: String) : ControlRequest()
 
-    // ── Members / VC / DID ──
+
     data class ListMembers(override val requestId: String) : ControlRequest()
     data class IssueCredential(val request: CredentialActionRequest, override val requestId: String) : ControlRequest()
     data class RevokeCredential(val request: CredentialActionRequest, override val requestId: String) : ControlRequest()
@@ -103,14 +102,14 @@ sealed class ControlRequest {
     data class VerifyVc(val request: VcVerifyRequest, override val requestId: String) : ControlRequest()
     data class ResolveDid(val did: String, override val requestId: String) : ControlRequest()
 
-    // ── Node scores ──
+
     data class ListNodeScores(override val requestId: String) : ControlRequest()
     data class GetNodeScore(val peerId: String, override val requestId: String) : ControlRequest()
 
-    // ── Oracle ──
+
     data class GetOracleScore(val playerId: String, override val requestId: String) : ControlRequest()
 
-    // ── Push management ──
+
     data class RegisterPushEndpoint(val endpoint: String, val devicePubkey: String, override val requestId: String) : ControlRequest()
     data class GetPushConfig(override val requestId: String) : ControlRequest()
     data class InitPushConfig(override val requestId: String) : ControlRequest()
@@ -118,13 +117,8 @@ sealed class ControlRequest {
     data class UpdatePushPreferences(val enabledEventTypes: Set<String>, val dndEnabled: Boolean, val dndStartHour: Int, val dndEndHour: Int, override val requestId: String) : ControlRequest()
 }
 
-/**
- * Sealed hierarchy mirroring the protobuf `ControlResponse` oneof body
- * from `jlucraft.control.v1.ControlResponse`.
+
  *
- * Each variant wraps either a domain model or a raw [ByteArray] for
- * protobuf messages that have no Kotlin model equivalent yet.
- */
 sealed class ControlResponse {
     data class ClusterHealth(val data: com.jlucraft.console.data.remote.ClusterHealthResponse) : ControlResponse()
     data class NetworkSnapshot(val data: com.jlucraft.console.data.remote.NetworkSnapshot) : ControlResponse()
@@ -152,6 +146,7 @@ sealed class ControlResponse {
     data class TournamentList(val tournaments: List<Tournament>) : ControlResponse()
     data class TournamentDetail(val tournament: Tournament) : ControlResponse()
     data class MatchList(val matches: List<Match>) : ControlResponse()
+    data class MatchUpdated(val match: Match) : ControlResponse()
     data class TeamList(val teams: List<Team>) : ControlResponse()
 
     data class DisputeList(val disputes: List<DisputeMatch>) : ControlResponse()
@@ -194,7 +189,7 @@ sealed class ControlResponse {
     }
 }
 
-/** Authentication context carried with all mutating ControlRequests. */
+
 data class AuthContext(
     val nonce: String,
     val signature: String,

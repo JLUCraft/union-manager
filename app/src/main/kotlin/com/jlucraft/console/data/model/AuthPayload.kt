@@ -14,17 +14,12 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
-/**
- * Typed command payload for [AuthRequest] and [withAuthenticatedOperation].
+
  *
- * Each subtype maps to a known cmdType and carries typed fields. The custom
- * [AuthPayloadSerializer] produces the same flat JSON that the server expects,
- * matching the old hand-built [JsonObject] payloads exactly.
- */
 @Serializable(with = AuthPayloadSerializer::class)
 sealed interface AuthPayload {
     val cmdType: String
-    /** Human-readable summary for UI display. */
+
     val summary: String get() = cmdType
 }
 
@@ -145,6 +140,40 @@ data class CreateDisputePayload(
 }
 
 @Serializable
+data class PauseMatchPayload(
+    @SerialName("match_id") val matchId: String
+) : AuthPayload {
+    override val cmdType: String get() = "pause-match"
+    override val summary: String get() = "暂停比赛 $matchId"
+}
+
+@Serializable
+data class ResumeMatchPayload(
+    @SerialName("match_id") val matchId: String
+) : AuthPayload {
+    override val cmdType: String get() = "resume-match"
+    override val summary: String get() = "恢复比赛 $matchId"
+}
+
+@Serializable
+data class ResetMatchPayload(
+    @SerialName("match_id") val matchId: String
+) : AuthPayload {
+    override val cmdType: String get() = "reset-match"
+    override val summary: String get() = "重置比赛 $matchId"
+}
+
+@Serializable
+data class JudgeMatchPayload(
+    @SerialName("match_id") val matchId: String,
+    @SerialName("winner_id") val winnerId: String,
+    val reason: String
+) : AuthPayload {
+    override val cmdType: String get() = "judge-match"
+    override val summary: String get() = "判定比赛 $matchId 胜负"
+}
+
+@Serializable
 data class AcknowledgeAlertPayload(
     @SerialName("alert_id") val alertId: String
 ) : AuthPayload {
@@ -234,7 +263,12 @@ data class GrantRoleAuthPayload(
 
 @Serializable
 data class IssueCredentialAuthPayload(
-    @SerialName("subject_did") val subjectDid: String
+    @SerialName("subject_did") val subjectDid: String,
+    val role: String = "member",
+    @SerialName("display_name") val displayName: String = "",
+    @SerialName("club_code") val clubCode: String? = null,
+    val permissions: List<String> = emptyList(),
+    @SerialName("member_since") val memberSince: String? = null
 ) : AuthPayload {
     override val cmdType: String get() = "issue-credential"
     override val summary: String get() = "签发凭证"
@@ -275,7 +309,7 @@ data class TestAuthChallengePayload(
     override val summary: String get() = "测试挑战 $action"
 }
 
-// ── Custom serializer: produces flat JSON matching old JsonObject format ──
+
 
 @PublishedApi
 internal object AuthPayloadSerializer : KSerializer<AuthPayload> {
@@ -335,6 +369,20 @@ internal object AuthPayloadSerializer : KSerializer<AuthPayload> {
                 put("match_id", value.matchId)
                 put("reason", value.reason)
             }
+            is PauseMatchPayload -> buildJsonObject {
+                put("match_id", value.matchId)
+            }
+            is ResumeMatchPayload -> buildJsonObject {
+                put("match_id", value.matchId)
+            }
+            is ResetMatchPayload -> buildJsonObject {
+                put("match_id", value.matchId)
+            }
+            is JudgeMatchPayload -> buildJsonObject {
+                put("match_id", value.matchId)
+                put("winner_id", value.winnerId)
+                put("reason", value.reason)
+            }
             is AcknowledgeAlertPayload -> buildJsonObject {
                 put("alert_id", value.alertId)
             }
@@ -375,12 +423,19 @@ internal object AuthPayloadSerializer : KSerializer<AuthPayload> {
             }
             is IssueCredentialAuthPayload -> buildJsonObject {
                 put("subject_did", value.subjectDid)
+                put("role", value.role)
+                put("display_name", value.displayName)
+                value.clubCode?.let { put("club_code", it) }
+                put("permissions", kotlinx.serialization.json.JsonArray(
+                    value.permissions.map { JsonPrimitive(it) }
+                ))
+                value.memberSince?.let { put("member_since", it) }
             }
             is RevokeCredentialAuthPayload -> buildJsonObject {
                 put("subject_did", value.subjectDid)
                 put("reason", value.reason)
             }
-            is PushPreferencesGetAuthPayload -> buildJsonObject { /* empty */ }
+            is PushPreferencesGetAuthPayload -> buildJsonObject {  }
             is PushPreferencesPutAuthPayload -> buildJsonObject {
                 put("enabled_event_types", kotlinx.serialization.json.JsonArray(
                     value.enabledEventTypes.map { JsonPrimitive(it) }
@@ -398,8 +453,8 @@ internal object AuthPayloadSerializer : KSerializer<AuthPayload> {
     }
 
     override fun deserialize(decoder: Decoder): AuthPayload {
-        // AuthPayload is never deserialized from server responses;
-        // server returns AuthChallenge which has no payload field.
+
+
         throw UnsupportedOperationException("AuthPayload deserialization is not supported")
     }
 }

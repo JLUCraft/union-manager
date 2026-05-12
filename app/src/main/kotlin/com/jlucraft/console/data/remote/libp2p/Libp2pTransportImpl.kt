@@ -51,13 +51,13 @@ class Libp2pTransportImpl @Inject constructor(
     @Volatile private var host: Host? = null
     @Volatile private var savedConfig: Libp2pConfig? = null
 
-    /** Peers successfully dialled during [start]. */
+
     private val peerRegistry = ConcurrentHashMap<String, PeerEntry>()
 
-    /** Guards [start] against concurrent invocations. */
+
     private val startMutex = Mutex()
 
-    // ── Public API ────────────────────────────────────────────────────────
+
 
     override suspend fun start(config: Libp2pConfig): Result<Unit> {
         val cur = _state.value
@@ -70,7 +70,7 @@ class Libp2pTransportImpl @Inject constructor(
             _state.value = TransportState.Starting
 
             runCatching {
-                // Merge bootstrap peers: prefer config, fall back to persisted.
+
                 val bootstrapPeers = config.bootstrapPeers.ifEmpty {
                     settingsStore.getBootstrapPeers()
                 }
@@ -87,7 +87,6 @@ class Libp2pTransportImpl @Inject constructor(
                     }
                     protocols {
                         add(FramedBytesProtocol(config.protocolPrefix))
-                        add(FramedBytesProtocol(EVENTS_PROTOCOL_ID))
                     }
                     addressBook { memory() }
                 }
@@ -178,7 +177,7 @@ class Libp2pTransportImpl @Inject constructor(
 
     override fun localPeerId(): String? = host?.peerId?.toBase58()
 
-    // ── Private helpers ───────────────────────────────────────────────────
+
 
     private suspend fun loadOrGenerateKey(config: Libp2pConfig) = withContext(Dispatchers.IO) {
         when {
@@ -212,9 +211,7 @@ class Libp2pTransportImpl @Inject constructor(
 
     private fun firstPeer(): PeerEntry? = peerRegistry.values.firstOrNull()
 
-    /**
-     * Parse `/ip4/1.2.3.4/tcp/4001/p2p/12D3KooW...` into a (PeerId, address-without-p2p) pair.
-     */
+
     private fun parseBootstrapMultiaddr(addrStr: String): Pair<PeerId, Multiaddr> {
         val p2pIdx = addrStr.lastIndexOf("/p2p/")
         require(p2pIdx >= 0) { "Bootstrap address missing /p2p/ component: $addrStr" }
@@ -223,29 +220,23 @@ class Libp2pTransportImpl @Inject constructor(
         return PeerId.fromBase58(peerIdStr) to Multiaddr(addrOnly)
     }
 
-    // ── Types ─────────────────────────────────────────────────────────────
+
 
     private data class PeerEntry(val peerId: PeerId, val addr: Multiaddr)
 
     companion object {
-        private const val EVENTS_PROTOCOL_ID = "/jlucraft/events/1.0.0"
         private const val STOP_TIMEOUT_MS = 5_000L
         private const val DEFAULT_CONNECT_TIMEOUT_MS = 15_000L
         private const val DEFAULT_REQUEST_TIMEOUT_MS = 30_000L
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FramedStreamController
-// ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Bridges a Netty channel with Kotlin coroutines for a single varint-framed stream.
+
+
+
+
  *
- * The [activeFuture] completes once [channelActive] fires (i.e. the stream is
- * fully negotiated and ready to use). All subsequent calls to [writeFrame],
- * [receiveOneFrame], and [frameFlow] are safe to invoke from any coroutine context.
- */
 internal class FramedStreamController {
 
     internal val activeFuture = CompletableFuture<FramedStreamController>()
@@ -254,32 +245,29 @@ internal class FramedStreamController {
 
     @Volatile private var nettyChannel: io.netty.channel.Channel? = null
 
-    /** Called by the Netty handler when the channel becomes active. */
+
     internal fun onChannelActive(ch: io.netty.channel.Channel) {
         nettyChannel = ch
         activeFuture.complete(this)
     }
 
-    /** Called by the Netty handler for each decoded frame. */
+
     internal fun onFrameReceived(bytes: ByteArray) {
         frameChannel.trySend(bytes)
     }
 
-    /** Called by the Netty handler when the channel closes cleanly. */
+
     internal fun onChannelInactive() {
         frameChannel.close()
     }
 
-    /** Called by the Netty handler on error. */
+
     internal fun onError(cause: Throwable) {
         frameChannel.close(cause)
         if (!activeFuture.isDone) activeFuture.completeExceptionally(cause)
     }
 
-    /**
-     * Send a varint-length-prefixed frame to the remote peer.
-     * Must only be called after [activeFuture] completes successfully.
-     */
+
     fun writeFrame(data: ByteArray) {
         val ch = nettyChannel ?: error("Channel not yet active")
         val varintBytes = encodeVarint(data.size)
@@ -287,13 +275,13 @@ internal class FramedStreamController {
         ch.writeAndFlush(buf)
     }
 
-    /** Receive a single inbound frame (suspends until one arrives). */
+
     suspend fun receiveOneFrame(): ByteArray = frameChannel.receive()
 
-    /** Flow of all inbound frames; completes when the stream closes. */
+
     val frameFlow: Flow<ByteArray> = frameChannel.receiveAsFlow()
 
-    /** Close the underlying Netty channel. */
+
     fun close() {
         nettyChannel?.close()
     }
@@ -311,17 +299,12 @@ internal class FramedStreamController {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FramedBytesProtocol
-// ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * libp2p [ProtocolBinding] that provides a [FramedStreamController] for streams
- * using unsigned LEB-128 varint length-delimited framing.
+
+
+
+
  *
- * The framing matches the prost-compatible encoding used by federated-server:
- *   `[ varint_length (1–10 bytes) ][ payload bytes ]`
- */
 internal class FramedBytesProtocol(
     announce: String,
 ) : ProtocolBinding<FramedStreamController> {
@@ -363,18 +346,13 @@ internal class FramedBytesProtocol(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// VarintFrameDecoder
-// ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Netty channel handler that decodes unsigned LEB-128 varint-length-prefixed frames.
+
+
+
+
  *
- * Format: `[ unsigned LEB-128 varint length (1–10 bytes) ][ payload (length bytes) ]`
  *
- * Buffers partial data across multiple channelRead calls using a byte array accumulator.
- * Fires a retained [ByteBuf] for each complete frame to the next handler.
- */
 internal class VarintFrameDecoder : ChannelInboundHandlerAdapter() {
     private val accumulator = java.io.ByteArrayOutputStream()
 
@@ -405,13 +383,13 @@ internal class VarintFrameDecoder : ChannelInboundHandlerAdapter() {
                         return
                     }
                 }
-                if (!complete) { pos = frameStart; break }  // incomplete varint
+                if (!complete) { pos = frameStart; break }
                 if (len < 0 || len > MAX_FRAME_BYTES) {
                     ctx.fireExceptionCaught(IllegalStateException("Frame length out of bounds: $len"))
                     return
                 }
                 val frameLen = len.toInt()
-                if (pos + frameLen > data.size) { pos = frameStart; break }  // incomplete payload
+                if (pos + frameLen > data.size) { pos = frameStart; break }
                 ctx.fireChannelRead(Unpooled.wrappedBuffer(data, pos, frameLen).retain())
                 pos += frameLen
             }
@@ -431,6 +409,6 @@ internal class VarintFrameDecoder : ChannelInboundHandlerAdapter() {
     }
 
     companion object {
-        private const val MAX_FRAME_BYTES = 64L * 1024 * 1024 // 64 MiB sanity limit
+        private const val MAX_FRAME_BYTES = 64L * 1024 * 1024
     }
 }

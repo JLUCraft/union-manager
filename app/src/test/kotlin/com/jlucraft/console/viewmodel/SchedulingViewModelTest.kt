@@ -10,7 +10,7 @@ import com.jlucraft.console.data.model.SchedulingConstraints
 import com.jlucraft.console.data.model.SchedulingConstraintsResponse
 import com.jlucraft.console.data.model.SchedulingPreset
 import com.jlucraft.console.data.model.SchedulingSimulation
-import com.jlucraft.console.data.repository.NodeRepository
+import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,7 +28,7 @@ class SchedulingViewModelTest {
     val instantTaskRule = InstantTaskExecutorRule()
 
     private val testDispatcher = StandardTestDispatcher()
-    private lateinit var mockRepository: NodeRepository
+    private lateinit var mockClient: Libp2pClient
     private lateinit var mockTeeAuth: TeeAuthManager
     private lateinit var mockAuthCoordinator: AuthCoordinator
 
@@ -80,7 +80,7 @@ class SchedulingViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        mockRepository = mockk()
+        mockClient = mockk()
         mockTeeAuth = mockk {
             every { isTeeBacked } returns true
         }
@@ -94,13 +94,13 @@ class SchedulingViewModelTest {
         unmockkAll()
     }
 
-    private fun createViewModel(): SchedulingViewModel = SchedulingViewModel(mockRepository, mockTeeAuth, mockAuthCoordinator)
+    private fun createViewModel(): SchedulingViewModel = SchedulingViewModel(mockClient, mockTeeAuth, mockAuthCoordinator)
 
-    // ── Load instances ──
+
 
     @Test
     fun `loadInstances populates instance list`() = runTest {
-        coEvery { mockRepository.getInstances() } returns Result.success(mockInstances)
+        coEvery { mockClient.getInstances() } returns Result.success(mockInstances)
         val viewModel = createViewModel()
 
         viewModel.loadInstances()
@@ -108,12 +108,12 @@ class SchedulingViewModelTest {
 
         assertEquals(mockInstances, viewModel.uiState.value.allInstances)
         assertNull(viewModel.uiState.value.instancesError)
-        coVerify(exactly = 1) { mockRepository.getInstances() }
+        coVerify(exactly = 1) { mockClient.getInstances() }
     }
 
     @Test
     fun `loadInstances handles error`() = runTest {
-        coEvery { mockRepository.getInstances() } returns Result.failure(RuntimeException("network error"))
+        coEvery { mockClient.getInstances() } returns Result.failure(RuntimeException("network error"))
         val viewModel = createViewModel()
 
         viewModel.loadInstances()
@@ -125,7 +125,7 @@ class SchedulingViewModelTest {
 
     @Test
     fun `selectInstance sets instanceId and loads constraints`() = runTest {
-        coEvery { mockRepository.getSchedulingConstraints(mockInstances[0].id) } returns Result.success(mockConstraints)
+        coEvery { mockClient.getSchedulingConstraints(mockInstances[0].id) } returns Result.success(mockConstraints)
         val viewModel = createViewModel()
 
         viewModel.selectInstance(mockInstances[0])
@@ -133,7 +133,7 @@ class SchedulingViewModelTest {
 
         assertEquals(mockInstances[0].id, viewModel.uiState.value.instanceId)
         assertEquals(mockConstraints, viewModel.uiState.value.constraints)
-        coVerify(exactly = 1) { mockRepository.getSchedulingConstraints(mockInstances[0].id) }
+        coVerify(exactly = 1) { mockClient.getSchedulingConstraints(mockInstances[0].id) }
     }
 
     @Test
@@ -145,11 +145,11 @@ class SchedulingViewModelTest {
         assertNull(viewModel.uiState.value.allInstances)
     }
 
-    // ── Set instance ID ──
+
 
     @Test
     fun `set instance ID loads constraints`() = runTest {
-        coEvery { mockRepository.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
+        coEvery { mockClient.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
         val viewModel = createViewModel()
 
         viewModel.setInstanceId(testInstanceId)
@@ -157,12 +157,12 @@ class SchedulingViewModelTest {
 
         assertEquals(testInstanceId, viewModel.uiState.value.instanceId)
         assertEquals(mockConstraints, viewModel.uiState.value.constraints)
-        coVerify(exactly = 1) { mockRepository.getSchedulingConstraints(testInstanceId) }
+        coVerify(exactly = 1) { mockClient.getSchedulingConstraints(testInstanceId) }
     }
 
     @Test
     fun `set instance ID handles load error`() = runTest {
-        coEvery { mockRepository.getSchedulingConstraints(testInstanceId) } returns Result.failure(RuntimeException("not found"))
+        coEvery { mockClient.getSchedulingConstraints(testInstanceId) } returns Result.failure(RuntimeException("not found"))
         val viewModel = createViewModel()
 
         viewModel.setInstanceId(testInstanceId)
@@ -180,10 +180,10 @@ class SchedulingViewModelTest {
         advanceUntilIdle()
 
         assertEquals("", viewModel.uiState.value.instanceId)
-        coVerify(exactly = 0) { mockRepository.getSchedulingConstraints(any()) }
+        coVerify(exactly = 0) { mockClient.getSchedulingConstraints(any()) }
     }
 
-    // ── Apply preset ──
+
 
     @Test
     fun `apply preset sets constraints`() {
@@ -209,12 +209,12 @@ class SchedulingViewModelTest {
         assertNull(viewModel.uiState.value.preset)
     }
 
-    // ── Simulate scheduling ──
+
 
     @Test
     fun `simulate scheduling succeeds`() = runTest {
-        coEvery { mockRepository.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
-        coEvery { mockRepository.simulateScheduling(testInstanceId, mockConstraints) } returns Result.success(mockSimulation)
+        coEvery { mockClient.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
+        coEvery { mockClient.simulateScheduling(testInstanceId, mockConstraints) } returns Result.success(mockSimulation)
         val viewModel = createViewModel()
 
         viewModel.setInstanceId(testInstanceId)
@@ -225,13 +225,13 @@ class SchedulingViewModelTest {
 
         assertEquals(mockSimulation, viewModel.uiState.value.simResult)
         assertNull(viewModel.uiState.value.simError)
-        coVerify(exactly = 1) { mockRepository.simulateScheduling(testInstanceId, mockConstraints) }
+        coVerify(exactly = 1) { mockClient.simulateScheduling(testInstanceId, mockConstraints) }
     }
 
     @Test
     fun `simulate scheduling fails`() = runTest {
-        coEvery { mockRepository.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
-        coEvery { mockRepository.simulateScheduling(testInstanceId, mockConstraints) } returns Result.failure(RuntimeException("sim error"))
+        coEvery { mockClient.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
+        coEvery { mockClient.simulateScheduling(testInstanceId, mockConstraints) } returns Result.failure(RuntimeException("sim error"))
         val viewModel = createViewModel()
 
         viewModel.setInstanceId(testInstanceId)
@@ -251,15 +251,15 @@ class SchedulingViewModelTest {
         viewModel.simulateScheduling()
         advanceUntilIdle()
 
-        coVerify(exactly = 0) { mockRepository.simulateScheduling(any(), any()) }
+        coVerify(exactly = 0) { mockClient.simulateScheduling(any(), any()) }
     }
 
-    // ── Apply constraints ──
+
 
     @Test
     fun `apply constraints succeeds`() = runTest {
-        coEvery { mockRepository.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
-        coEvery { mockRepository.applySchedulingConstraints(any()) } returns Result.success(mockResponse)
+        coEvery { mockClient.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
+        coEvery { mockClient.applySchedulingConstraints(any()) } returns Result.success(mockResponse)
         val viewModel = createViewModel()
 
         viewModel.setInstanceId(testInstanceId)
@@ -270,13 +270,13 @@ class SchedulingViewModelTest {
 
         assertEquals(mockResponse, viewModel.uiState.value.applyResult)
         assertEquals("调度约束已成功应用", viewModel.uiState.value.applySuccess)
-        coVerify(exactly = 1) { mockRepository.applySchedulingConstraints(any()) }
+        coVerify(exactly = 1) { mockClient.applySchedulingConstraints(any()) }
     }
 
     @Test
     fun `apply constraints fails`() = runTest {
-        coEvery { mockRepository.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
-        coEvery { mockRepository.applySchedulingConstraints(any()) } returns Result.failure(RuntimeException("apply error"))
+        coEvery { mockClient.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
+        coEvery { mockClient.applySchedulingConstraints(any()) } returns Result.failure(RuntimeException("apply error"))
         val viewModel = createViewModel()
 
         viewModel.setInstanceId(testInstanceId)
@@ -296,14 +296,16 @@ class SchedulingViewModelTest {
         viewModel.applyConstraints("test")
         advanceUntilIdle()
 
-        coVerify(exactly = 0) { mockRepository.applySchedulingConstraints(any()) }
+        coVerify(exactly = 0) { mockClient.applySchedulingConstraints(any()) }
     }
 
     @Test
     fun `apply constraints rejected on read-only device`() = runTest {
-        coEvery { mockRepository.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
+        coEvery { mockClient.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
         every { mockTeeAuth.isTeeBacked } returns false
         every { mockTeeAuth.capability } returns TeeCapability.NoHardwareBackedKey("emulator")
+        coEvery { mockAuthCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns
+            Result.failure(com.jlucraft.console.data.auth.ReadOnlyDeviceException.fromCapability(mockTeeAuth.capability))
         val viewModel = createViewModel()
 
         viewModel.setInstanceId(testInstanceId)
@@ -314,15 +316,15 @@ class SchedulingViewModelTest {
 
         assertNotNull(viewModel.uiState.value.applyError)
         assertTrue(viewModel.uiState.value.applyError!!.contains("管理写操作已被禁止"))
-        coVerify(exactly = 0) { mockRepository.applySchedulingConstraints(any()) }
+        coVerify(exactly = 0) { mockClient.applySchedulingConstraints(any()) }
     }
 
-    // ── Clear apply state ──
+
 
     @Test
     fun `clear apply state resets apply fields`() = runTest {
-        coEvery { mockRepository.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
-        coEvery { mockRepository.applySchedulingConstraints(any()) } returns Result.success(mockResponse)
+        coEvery { mockClient.getSchedulingConstraints(testInstanceId) } returns Result.success(mockConstraints)
+        coEvery { mockClient.applySchedulingConstraints(any()) } returns Result.success(mockResponse)
         val viewModel = createViewModel()
 
         viewModel.setInstanceId(testInstanceId)

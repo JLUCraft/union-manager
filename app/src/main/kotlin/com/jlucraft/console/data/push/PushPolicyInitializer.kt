@@ -12,7 +12,7 @@ object PushPolicyInitializer {
 
     fun initialize(settingsStore: SettingsStore) {
         scope.launch {
-            // Initial load (non-blocking on IO dispatcher)
+
             PushNotificationPolicy.enabledEventTypes = settingsStore.getPushEnabledEventTypes()
             PushNotificationPolicy.dndEnabled = settingsStore.isDndEnabled()
             PushNotificationPolicy.dndStartHour = settingsStore.getDndStartHour()

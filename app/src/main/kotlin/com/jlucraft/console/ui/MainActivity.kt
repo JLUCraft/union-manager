@@ -57,6 +57,7 @@ public open class MainActivity : AppCompatActivity() {
 fun configureUnionManagerActivity(activity: AppCompatActivity, services: AppServices) {
     val splash = activity.installSplashScreen()
     services.attachActivity(activity)
+    com.jlucraft.console.data.auth.AuthStateHolder.setReadOnlyModeFrom(services.teeAuthManager)
     activity.enableEdgeToEdge()
 
     val onboardingReady = AtomicBoolean(false)
@@ -98,7 +99,7 @@ fun UnionManagerApp(services: com.jlucraft.console.app.AppServices) {
 
     Scaffold(
         bottomBar = {
-            // Only show bottom bar for main tabs
+
             if (current in setOf(AppRoute.Dashboard, AppRoute.Instances, AppRoute.League,
                     AppRoute.Governance, AppRoute.AuditLog, AppRoute.Settings)) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {

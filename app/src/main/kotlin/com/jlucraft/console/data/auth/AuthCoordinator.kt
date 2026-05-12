@@ -69,25 +69,44 @@ class AuthCoordinator(
             }
         )
 
+    fun requireWriteCapability(): Result<Unit> {
+        AuthStateHolder.setReadOnlyModeFrom(teeAuth)
+        return if (teeAuth.isTeeBacked) {
+            Result.success(Unit)
+        } else {
+            Result.failure(ReadOnlyDeviceException.fromCapability(teeAuth.capability))
+        }
+    }
+
     suspend fun authenticateForOperation(
         cmdType: String,
         payload: AuthPayload,
         title: String = "生物认证",
         subtitle: String = "请验证身份以继续操作"
-    ): Result<Unit> {
-        if (!teeAuth.isTeeBacked) {
-            return Result.failure(ReadOnlyDeviceException.fromCapability(teeAuth.capability))
-        }
+    ): Result<Unit> = authenticateForOperationWithDeviceKey(
+        cmdType = cmdType,
+        payload = { payload },
+        title = title,
+        subtitle = subtitle
+    ).map { Unit }
+
+    suspend fun authenticateForOperationWithDeviceKey(
+        cmdType: String,
+        payload: (devicePublicKey: String) -> AuthPayload,
+        title: String = "生物认证",
+        subtitle: String = "请验证身份以继续操作"
+    ): Result<String> {
+        requireWriteCapability().onFailure { return Result.failure(it) }
         AuthStateHolder.startVerifying()
 
-        // Step 1: Biometric
+
         val bioResult = biometricAuth.authenticate(title, subtitle)
         if (bioResult != BiometricResult.Success) {
             AuthStateHolder.onVerificationFailed()
             return Result.failure(biometricError(bioResult))
         }
 
-        // Step 2: Fast local pre-check
+
         val userRole = localRegistration?.role ?: "guest"
         if (!RequiredRoleGate.preCheck(cmdType, userRole)) {
             AuthStateHolder.onVerificationFailed()
@@ -96,11 +115,14 @@ class AuthCoordinator(
             )
         }
 
-        // Step 3: Request server challenge via libp2p
-        val publicKey = teeAuth.getPublicKey()
+
+        val publicKey = teeAuth.tryGetPublicKey().getOrElse {
+            AuthStateHolder.onVerificationFailed()
+            return Result.failure(ReadOnlyDeviceException.fromCapability(teeAuth.capability))
+        }
         val request = AuthRequest(
             cmd_type = cmdType,
-            payload = payload,
+            payload = payload(publicKey),
             public_key = publicKey
         )
 
@@ -110,7 +132,7 @@ class AuthCoordinator(
             return Result.failure(Exception("获取挑战失败: ${it.message}"))
         }
 
-        // Step 4: Authoritative checks
+
         if (challenge.ttl_seconds <= 0) {
             AuthStateHolder.onVerificationFailed()
             return Result.failure(Exception("挑战已过期"))
@@ -136,7 +158,7 @@ class AuthCoordinator(
             }
         }
 
-        // Step 5: TEE sign
+
         AuthStateHolder.openSignWindow(challenge.nonce)
 
         val message = TeeAuthManager.buildCanonicalChallengeMessage(challenge)
@@ -148,7 +170,7 @@ class AuthCoordinator(
             return Result.failure(Exception("签名失败: ${e.message}"))
         }
 
-        // Step 6: Populate subject_did
+
         val subjectDid = localRegistration?.subjectDid ?: ""
         val response = SignResponse(
             challenge_id = challenge.challenge_id,
@@ -175,7 +197,7 @@ class AuthCoordinator(
                 )
             )
             AuthStateHolder.onUnlockSuccess()
-            Result.success(Unit)
+            Result.success(publicKey)
         } else {
             AuthStateHolder.closeSignWindow()
             Result.failure(Exception(authResult.message))
@@ -192,9 +214,7 @@ class AuthCoordinator(
         subtitle: String,
         message: ByteArray
     ): Result<String> {
-        if (!teeAuth.isTeeBacked) {
-            return Result.failure(ReadOnlyDeviceException.fromCapability(teeAuth.capability))
-        }
+        requireWriteCapability().onFailure { return Result.failure(it) }
         val bioResult = biometricAuth.authenticate(title, subtitle)
         if (bioResult != BiometricResult.Success) {
             return Result.failure(biometricError(bioResult))
@@ -205,6 +225,21 @@ class AuthCoordinator(
         } catch (e: Exception) {
             Result.failure(Exception("签名失败: ${e.message}"))
         }
+    }
+
+    suspend fun signWithBiometricAndDeviceKey(
+        title: String,
+        subtitle: String,
+        message: ByteArray
+    ): Result<SignedDeviceMessage> {
+        requireWriteCapability().onFailure { return Result.failure(it) }
+        val publicKey = teeAuth.tryGetPublicKey().getOrElse {
+            return Result.failure(ReadOnlyDeviceException.fromCapability(teeAuth.capability))
+        }
+        val signature = signWithBiometric(title, subtitle, message).getOrElse {
+            return Result.failure(it)
+        }
+        return Result.success(SignedDeviceMessage(publicKey, signature))
     }
 
     fun registerLocalIdentity(subjectDid: String, role: String, displayName: String): Result<Unit> {
@@ -218,6 +253,27 @@ class AuthCoordinator(
             pubkey = pubkey
         )
         return Result.success(Unit)
+    }
+}
+
+suspend inline fun <R> AuthCoordinator.withAuthenticatedOperationUsingDeviceKey(
+    cmdType: String,
+    noinline payload: (devicePublicKey: String) -> AuthPayload,
+    title: String = "生物认证",
+    subtitle: String = "请验证身份以继续操作",
+    operation: suspend (devicePublicKey: String) -> R
+): Result<R> {
+    val authResult = authenticateForOperationWithDeviceKey(cmdType, payload, title, subtitle)
+    if (authResult.isFailure) {
+        return Result.failure(authResult.exceptionOrNull() ?: RuntimeException("Authentication failed"))
+    }
+    val devicePublicKey = authResult.getOrThrow()
+    return try {
+        Result.success(operation(devicePublicKey))
+    } catch (e: Exception) {
+        Result.failure(e)
+    } finally {
+        clearAuth()
     }
 }
 

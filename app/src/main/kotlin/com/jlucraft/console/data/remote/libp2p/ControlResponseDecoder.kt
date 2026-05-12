@@ -42,15 +42,8 @@ import com.jlucraft.console.data.remote.PushConfigResponse
 import com.jlucraft.console.data.remote.PushPreferencesResponse
 import com.jlucraft.control.v1.ControlResponse as ProtoControlResponse
 
-/**
- * Decodes serialised `com.jlucraft.control.v1.ControlResponse` protobuf bytes
- * into Kotlin [ControlResponse] sealed-class instances.
+
  *
- * Field mapping notes:
- * - Proto uses snake_case field names; Kotlin domain models use camelCase.
- * - Proto fields with no Kotlin equivalent default to null / empty / 0.
- * - Unknown body cases return [ControlResponse.Unknown] with the raw bytes.
- */
 private fun String.ifEmptyNull(): String? = this.ifEmptyNull()
 
 internal object ControlResponseDecoder {
@@ -60,7 +53,7 @@ internal object ControlResponseDecoder {
             return ControlResponse.Error("DECODE_FAILED", e.message ?: "Failed to parse ControlResponse")
         }
 
-        // Surface proto-level errors first.
+
         if (proto.hasError() && proto.error.code.isNotEmpty()) {
             return ControlResponse.Error(proto.error.code, proto.error.message)
         }
@@ -157,7 +150,7 @@ internal object ControlResponseDecoder {
                         solo = proto.leaderboard.entriesList.map { e ->
                             LeaderboardEntry(
                                 player_id = e.playerId,
-                                total_score = e.score.toDouble(),
+                                total_score = e.score,
                                 tournaments_played = 0,
                             )
                         }
@@ -267,15 +260,15 @@ internal object ControlResponseDecoder {
         }
     }
 
-    // ── Entity decoders ───────────────────────────────────────────────────
+
 
     private fun decodeClusterHealth(proto: ProtoControlResponse): ClusterHealthResponse =
         ClusterHealthResponse(
             status = proto.clusterHealth.status,
-            peer_id = "",                                     // not in proto
+            peer_id = "",
             connected_peers = proto.clusterHealth.nodeCount,
             running_instances = proto.clusterHealth.runningInstances,
-            consensus_role = "",                              // not in proto
+            consensus_role = "",
             last_announcement_at = null,
         )
 
@@ -450,11 +443,11 @@ internal object ControlResponseDecoder {
     private fun decodeNodeScore(n: com.jlucraft.control.v1.NodeScore): NodeScore =
         NodeScore(
             peer_id = n.peerId,
-            uptime_score = n.uptimeScore.toDouble(),
-            performance_score = n.performanceScore.toDouble(),
-            governance_score = n.governanceScore.toDouble(),
-            penalty = n.penalty.toDouble(),
-            final_score = (n.uptimeScore + n.performanceScore + n.governanceScore - n.penalty).toDouble(),
+            uptime_score = n.uptimeScore,
+            performance_score = n.performanceScore,
+            governance_score = n.governanceScore,
+            penalty = n.penalty,
+            final_score = n.uptimeScore + n.performanceScore + n.governanceScore - n.penalty,
             last_updated = "",
         )
 
@@ -468,7 +461,7 @@ internal object ControlResponseDecoder {
             nonce = ch.nonce,
             issued_at = ch.issuedAt,
             expires_at = ch.expiresAt,
-            ttl_seconds = ch.ttlSeconds.toLong(),
+            ttl_seconds = ch.ttlSeconds,
             cmd_type = ch.cmdType,
             payload_hash = ch.payloadHash,
             human_summary = ch.humanSummary,

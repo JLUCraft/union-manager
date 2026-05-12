@@ -1,9 +1,11 @@
 package com.jlucraft.console.data.auth
 
-import com.jlucraft.console.data.remote.ApiService
+import com.jlucraft.console.data.model.StartInstancePayload
 import com.jlucraft.console.data.remote.AuthChallenge
 import com.jlucraft.console.data.remote.AuthResult
 import com.jlucraft.console.data.remote.SignResponse
+import com.jlucraft.console.data.remote.libp2p.AuthContext
+import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -13,8 +15,6 @@ import io.mockk.Runs
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -24,18 +24,20 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class AuthCoordinatorTest {
 
-    private lateinit var api: ApiService
+    private lateinit var client: Libp2pClient
     private lateinit var teeAuth: TeeAuthManager
     private lateinit var biometricAuth: BiometricAuthManager
     private lateinit var coordinator: AuthCoordinator
 
     @Before
     fun setUp() {
-        api = mockk(relaxed = true)
+        client = mockk(relaxed = true)
         teeAuth = mockk(relaxed = true)
         biometricAuth = mockk(relaxed = true)
         every { teeAuth.isTeeBacked } returns true
-        coordinator = AuthCoordinator(api, teeAuth, biometricAuth)
+        every { teeAuth.capability } returns TeeCapability.TeeOnlyAvailable
+        every { teeAuth.tryGetPublicKey() } returns Result.success("test-pubkey")
+        coordinator = AuthCoordinator(client, teeAuth, biometricAuth)
     }
 
     private fun challenge(
@@ -58,50 +60,50 @@ class AuthCoordinatorTest {
     )
 
     @Test
-    fun `test_auth_headers_set_after_success`() = runTest {
+    fun `test_auth_context_set_after_success`() = runTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
-        coEvery { api.requestChallenge(any()) } returns Result.success(
+        coEvery { client.requestChallenge(any()) } returns Result.success(
             challenge()
         )
         every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
-        coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
-        every { api.setAuthHeaders(any(), any(), any()) } just Runs
+        coEvery { client.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
+        every { client.setAuthContext(any()) } just Runs
 
         val result = coordinator.authenticateForOperation(
             "test-cmd",
-            buildJsonObject { put("key", "value") }
+            StartInstancePayload("test-instance")
         )
 
         assertTrue(result.isSuccess)
-        verify { api.setAuthHeaders("nonce123", "AQID", "challenge-123") }
+        verify { client.setAuthContext(any()) }
     }
 
     @Test
-    fun `test_auth_headers_cleared_on_clear`() {
-        every { api.clearAuthHeaders() } just Runs
+    fun `test_auth_context_cleared_on_clearAuth`() {
+        every { client.clearAuthContext() } just Runs
 
         coordinator.clearAuth()
 
-        verify { api.clearAuthHeaders() }
+        verify { client.clearAuthContext() }
     }
 
     @Test
     fun `test_withAuthenticatedOperation_runs_block`() = runTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
-        coEvery { api.requestChallenge(any()) } returns Result.success(
+        coEvery { client.requestChallenge(any()) } returns Result.success(
             challenge()
         )
         every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
-        coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
-        every { api.setAuthHeaders(any(), any(), any()) } just Runs
-        every { api.clearAuthHeaders() } just Runs
+        coEvery { client.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
+        every { client.setAuthContext(any()) } just Runs
+        every { client.clearAuthContext() } just Runs
 
         var blockRan = false
         val result = coordinator.withAuthenticatedOperation(
             cmdType = "test-cmd",
-            payload = buildJsonObject { put("key", "value") }
+            payload = StartInstancePayload("test-instance")
         ) {
             blockRan = true
             "result-value"
@@ -110,50 +112,50 @@ class AuthCoordinatorTest {
         assertTrue(result.isSuccess)
         assertEquals("result-value", result.getOrNull())
         assertTrue(blockRan)
-        verify { api.clearAuthHeaders() }
+        verify { client.clearAuthContext() }
     }
 
     @Test
     fun `test_withAuthenticatedOperation_cleans_up_on_error`() = runTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
-        coEvery { api.requestChallenge(any()) } returns Result.success(
+        coEvery { client.requestChallenge(any()) } returns Result.success(
             challenge()
         )
         every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
-        coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
-        every { api.setAuthHeaders(any(), any(), any()) } just Runs
-        every { api.clearAuthHeaders() } just Runs
+        coEvery { client.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
+        every { client.setAuthContext(any()) } just Runs
+        every { client.clearAuthContext() } just Runs
 
         val result = coordinator.withAuthenticatedOperation(
             cmdType = "test-cmd",
-            payload = buildJsonObject { put("key", "value") }
+            payload = StartInstancePayload("test-instance")
         ) {
             throw RuntimeException("operation failed")
         }
 
         assertTrue(result.isFailure)
-        verify { api.clearAuthHeaders() }
+        verify { client.clearAuthContext() }
     }
 
     @Test
-    fun `test_authenticateForOperation_calls_api`() = runTest {
+    fun `test_authenticateForOperation_calls_client`() = runTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
-        coEvery { api.requestChallenge(any()) } returns Result.success(
+        coEvery { client.requestChallenge(any()) } returns Result.success(
             challenge()
         )
         every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
-        coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
-        every { api.setAuthHeaders(any(), any(), any()) } just Runs
+        coEvery { client.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
+        every { client.setAuthContext(any()) } just Runs
 
         coordinator.authenticateForOperation(
             "test-cmd",
-            buildJsonObject { put("key", "value") }
+            StartInstancePayload("test-instance")
         )
 
-        coVerify { api.requestChallenge(any()) }
-        coVerify { api.verifySignature(any()) }
+        coVerify { client.requestChallenge(any()) }
+        coVerify { client.verifySignature(any()) }
     }
 
     @Test
@@ -163,7 +165,7 @@ class AuthCoordinatorTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "device-public-key"
         coEvery {
-            api.requestChallenge(any())
+            client.requestChallenge(any())
         } returns Result.success(
             challenge(
                 nonce = "nonce-42",
@@ -173,17 +175,17 @@ class AuthCoordinatorTest {
             ).copy(risk_level = "medium", required_role = "admin")
         )
         every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
-        coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
-        every { api.setAuthHeaders(any(), any(), any()) } just Runs
+        coEvery { client.verifySignature(any()) } returns Result.success(AuthResult(true, "ok"))
+        every { client.setAuthContext(any()) } just Runs
 
         val result = coordinator.authenticateForOperation(
             "stop-instance",
-            buildJsonObject { put("instance_id", "inst-1") }
+            StartInstancePayload("inst-1")
         )
 
         assertTrue(result.isSuccess)
         coVerify {
-            api.verifySignature(withArg<SignResponse> { response ->
+            client.verifySignature(withArg<SignResponse> { response ->
                 assertEquals("challenge-42", response.challenge_id)
                 assertEquals("nonce-42", response.nonce)
                 assertEquals("did:key:zAlice", response.subject_did)
@@ -198,17 +200,17 @@ class AuthCoordinatorTest {
         coordinator.registerLocalIdentity("did:key:zBob", "member", "Bob")
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "device-public-key"
-        coEvery { api.requestChallenge(any()) } returns Result.success(
+        coEvery { client.requestChallenge(any()) } returns Result.success(
             challenge(cmdType = "stop-instance").copy(required_role = "admin", risk_level = "medium")
         )
 
         val result = coordinator.authenticateForOperation(
             "stop-instance",
-            buildJsonObject { put("instance_id", "inst-1") }
+            StartInstancePayload("inst-1")
         )
 
         assertTrue(result.isFailure)
-        coVerify(exactly = 0) { api.verifySignature(any()) }
+        coVerify(exactly = 0) { client.verifySignature(any()) }
     }
 
     @Test
@@ -217,7 +219,7 @@ class AuthCoordinatorTest {
 
         val result = coordinator.authenticateForOperation(
             "test-cmd",
-            buildJsonObject { put("key", "value") }
+            StartInstancePayload("test-instance")
         )
 
         assertTrue(result.isFailure)
@@ -227,11 +229,11 @@ class AuthCoordinatorTest {
     fun `test_authenticateForOperation_fails_on_challenge_error`() = runTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
-        coEvery { api.requestChallenge(any()) } returns Result.failure(Exception("challenge failed"))
+        coEvery { client.requestChallenge(any()) } returns Result.failure(Exception("challenge failed"))
 
         val result = coordinator.authenticateForOperation(
             "test-cmd",
-            buildJsonObject { put("key", "value") }
+            StartInstancePayload("test-instance")
         )
 
         assertTrue(result.isFailure)
@@ -241,14 +243,14 @@ class AuthCoordinatorTest {
     fun `test_authenticateForOperation_fails_on_sign_error`() = runTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
-        coEvery { api.requestChallenge(any()) } returns Result.success(
+        coEvery { client.requestChallenge(any()) } returns Result.success(
             challenge()
         )
         every { teeAuth.sign(any()) } throws IllegalStateException("sign failed")
 
         val result = coordinator.authenticateForOperation(
             "test-cmd",
-            buildJsonObject { put("key", "value") }
+            StartInstancePayload("test-instance")
         )
 
         assertTrue(result.isFailure)
@@ -258,15 +260,15 @@ class AuthCoordinatorTest {
     fun `test_authenticateForOperation_fails_on_verify_failure`() = runTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Success
         every { teeAuth.getPublicKey() } returns "test-pubkey"
-        coEvery { api.requestChallenge(any()) } returns Result.success(
+        coEvery { client.requestChallenge(any()) } returns Result.success(
             challenge()
         )
         every { teeAuth.sign(any()) } returns byteArrayOf(1, 2, 3)
-        coEvery { api.verifySignature(any()) } returns Result.success(AuthResult(false, "denied"))
+        coEvery { client.verifySignature(any()) } returns Result.success(AuthResult(false, "denied"))
 
         val result = coordinator.authenticateForOperation(
             "test-cmd",
-            buildJsonObject { put("key", "value") }
+            StartInstancePayload("test-instance")
         )
 
         assertTrue(result.isFailure)
@@ -275,12 +277,12 @@ class AuthCoordinatorTest {
     @Test
     fun `test_withAuthenticatedOperation_fails_on_auth_failure`() = runTest {
         coEvery { biometricAuth.authenticate(any(), any()) } returns BiometricResult.Error("denied")
-        every { api.clearAuthHeaders() } just Runs
+        every { client.clearAuthContext() } just Runs
 
         var blockRan = false
         val result = coordinator.withAuthenticatedOperation(
             cmdType = "test-cmd",
-            payload = buildJsonObject { put("key", "value") }
+            payload = StartInstancePayload("test-instance")
         ) {
             blockRan = true
             "value"
@@ -318,5 +320,105 @@ class AuthCoordinatorTest {
         val result = coordinator.signWithBiometric("Title", "Subtitle", byteArrayOf(4, 5, 6))
 
         assertTrue(result.isFailure)
+    }
+
+
+
+    @Test
+    fun `authenticateForOperation fails when TEE is not backed`() = runTest {
+        every { teeAuth.isTeeBacked } returns false
+        every { teeAuth.capability } returns TeeCapability.NoHardwareBackedKey("测试: 无 TEE")
+
+        val result = coordinator.authenticateForOperation(
+            "test-cmd",
+            StartInstancePayload("test-instance")
+        )
+
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull()
+        assertTrue(exception is ReadOnlyDeviceException)
+        assertTrue(exception!!.message!!.contains("TEE"))
+    }
+
+    @Test
+    fun `signWithBiometric fails when TEE is not backed`() = runTest {
+        every { teeAuth.isTeeBacked } returns false
+        every { teeAuth.capability } returns TeeCapability.NoHardwareBackedKey("无硬件密钥")
+
+        val result = coordinator.signWithBiometric("Title", "Subtitle", byteArrayOf(1, 2, 3))
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is ReadOnlyDeviceException)
+    }
+
+    @Test
+    fun `withAuthenticatedOperation fails when TEE is not backed`() = runTest {
+        every { teeAuth.isTeeBacked } returns false
+        every { teeAuth.capability } returns TeeCapability.NoHardwareBackedKey("无硬件密钥")
+        every { client.clearAuthContext() } just Runs
+
+        var blockRan = false
+        val result = coordinator.withAuthenticatedOperation(
+            cmdType = "test-cmd",
+            payload = StartInstancePayload("test-instance")
+        ) {
+            blockRan = true
+            "value"
+        }
+
+        assertTrue(result.isFailure)
+        assertFalse(blockRan)
+        assertTrue(result.exceptionOrNull() is ReadOnlyDeviceException)
+    }
+
+    @Test
+    fun `multiple write operations all fail when TEE is not backed`() = runTest {
+
+        every { teeAuth.isTeeBacked } returns false
+        every { teeAuth.capability } returns TeeCapability.NoHardwareBackedKey("无硬件密钥")
+
+        val writeOperations = listOf(
+            "stop-instance",
+            "start-instance",
+            "create-instance",
+            "delete-instance",
+            "migrate-instance",
+            "revoke-device",
+            "emergency-revoke-device",
+            "grant-role",
+            "revoke-credential",
+            "execute-proposal",
+            "create-proposal",
+            "archive-season",
+            "acknowledge-alert",
+            "resolve-alert",
+        )
+
+        for (cmdType in writeOperations) {
+            val result = coordinator.authenticateForOperation(
+                cmdType,
+                StartInstancePayload("test-instance")
+            )
+            assertTrue(
+                "Write operation '$cmdType' should fail when TEE is not backed",
+                result.isFailure
+            )
+            assertTrue(
+                "Write operation '$cmdType' should fail with ReadOnlyDeviceException",
+                result.exceptionOrNull() is ReadOnlyDeviceException
+            )
+        }
+    }
+
+    @Test
+    fun `ReadOnlyDeviceException contains descriptive reason from TeeCapability`() {
+        val reason = "Ed25519 KeyPairGenerator 不可用: NoSuchAlgorithmException"
+        val capability = TeeCapability.NoHardwareBackedKey(reason)
+
+        val exception = ReadOnlyDeviceException.fromCapability(capability)
+
+        assertTrue(exception.message!!.contains(reason))
+        assertTrue(exception.message!!.contains("TEE"))
+        assertTrue(exception.message!!.contains("已被禁止"))
     }
 }

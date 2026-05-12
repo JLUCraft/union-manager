@@ -4,13 +4,12 @@ import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.auth.TeeAuthManager
 import com.jlucraft.console.data.model.Device
-import com.jlucraft.console.data.repository.NodeRepository
+import com.jlucraft.console.data.model.RevokeDevicePayload
+import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.*
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -24,7 +23,7 @@ class DeviceViewModelTest {
     val instantTaskRule = InstantTaskExecutorRule()
 
     private val testDispatcher = StandardTestDispatcher()
-    private lateinit var mockRepository: NodeRepository
+    private lateinit var mockClient: Libp2pClient
     private lateinit var mockTeeAuth: TeeAuthManager
     private lateinit var mockAuthCoordinator: AuthCoordinator
 
@@ -50,11 +49,28 @@ class DeviceViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        mockRepository = mockk()
+        mockClient = mockk()
         mockTeeAuth = mockk()
         mockAuthCoordinator = mockk()
         every { mockTeeAuth.getPublicKey() } returns "pk-device-1"
+        every { mockTeeAuth.tryGetPublicKey() } returns Result.success("pk-device-1")
         every { mockAuthCoordinator.clearAuth() } just Runs
+    }
+
+    private fun mockDeviceKeyAuthSuccess() {
+        coEvery {
+            mockAuthCoordinator.authenticateForOperationWithDeviceKey(any(), any(), any(), any())
+        } answers {
+            val payloadFactory = arg<(String) -> com.jlucraft.console.data.model.AuthPayload>(1)
+            payloadFactory("pk-device-1")
+            Result.success("pk-device-1")
+        }
+    }
+
+    private fun mockDeviceKeyAuthFailure(message: String) {
+        coEvery {
+            mockAuthCoordinator.authenticateForOperationWithDeviceKey(any(), any(), any(), any())
+        } returns Result.failure(RuntimeException(message))
     }
 
     @After
@@ -63,13 +79,13 @@ class DeviceViewModelTest {
         unmockkAll()
     }
 
-    private fun createViewModel(): DeviceViewModel = DeviceViewModel(mockRepository, mockTeeAuth, mockAuthCoordinator)
+    private fun createViewModel(): DeviceViewModel = DeviceViewModel(mockClient, mockTeeAuth, mockAuthCoordinator)
 
-    // ── Load devices ──
+
 
     @Test
     fun `loads devices on init`() = runTest {
-        coEvery { mockRepository.listDevices() } returns Result.success(mockDevices)
+        coEvery { mockClient.listDevices() } returns Result.success(mockDevices)
         val viewModel = createViewModel()
         advanceUntilIdle()
 
@@ -80,7 +96,7 @@ class DeviceViewModelTest {
 
     @Test
     fun `handles load devices error`() = runTest {
-        coEvery { mockRepository.listDevices() } returns Result.failure(RuntimeException("fetch failed"))
+        coEvery { mockClient.listDevices() } returns Result.failure(RuntimeException("fetch failed"))
         val viewModel = createViewModel()
         advanceUntilIdle()
 
@@ -88,14 +104,14 @@ class DeviceViewModelTest {
         assertTrue(viewModel.uiState.value.devices.isEmpty())
     }
 
-    // ── Revoke device ──
+
 
     @Test
     fun `revoke device succeeds and refreshes list`() = runTest {
-        coEvery { mockRepository.listDevices() } returns Result.success(mockDevices)
+        coEvery { mockClient.listDevices() } returns Result.success(mockDevices)
         val revokedDevice = mockDevices[0].copy(status = "revoked", revokedAt = "2024-01-04T00:00:00Z", revokedReason = "test revoke")
-        coEvery { mockRepository.revokeDevice("pk-device-1", "test reason", "pk-device-1") } returns Result.success(revokedDevice)
-        coEvery { mockAuthCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns Result.success(Unit)
+        coEvery { mockClient.revokeDevice("pk-device-1", "test reason", "pk-device-1") } returns Result.success(revokedDevice)
+        mockDeviceKeyAuthSuccess()
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -104,14 +120,14 @@ class DeviceViewModelTest {
         advanceUntilIdle()
 
         assertEquals("设备已吊销", viewModel.uiState.value.revokeSuccess)
-        coVerify(exactly = 1) { mockRepository.revokeDevice("pk-device-1", "test reason", "pk-device-1") }
-        coVerify(exactly = 2) { mockRepository.listDevices() }
+        coVerify(exactly = 1) { mockClient.revokeDevice("pk-device-1", "test reason", "pk-device-1") }
+        coVerify(exactly = 2) { mockClient.listDevices() }
     }
 
     @Test
     fun `revoke device fails on auth failure`() = runTest {
-        coEvery { mockRepository.listDevices() } returns Result.success(mockDevices)
-        coEvery { mockAuthCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns Result.failure(RuntimeException("auth failed"))
+        coEvery { mockClient.listDevices() } returns Result.success(mockDevices)
+        mockDeviceKeyAuthFailure("auth failed")
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -120,14 +136,14 @@ class DeviceViewModelTest {
         advanceUntilIdle()
 
         assertEquals("auth failed", viewModel.uiState.value.revokeError)
-        coVerify(exactly = 0) { mockRepository.revokeDevice(any(), any(), any()) }
+        coVerify(exactly = 0) { mockClient.revokeDevice(any(), any(), any()) }
     }
 
     @Test
     fun `revoke device fails on server error`() = runTest {
-        coEvery { mockRepository.listDevices() } returns Result.success(mockDevices)
-        coEvery { mockAuthCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns Result.success(Unit)
-        coEvery { mockRepository.revokeDevice("pk-device-1", "test reason", "pk-device-1") } returns Result.failure(RuntimeException("server error"))
+        coEvery { mockClient.listDevices() } returns Result.success(mockDevices)
+        mockDeviceKeyAuthSuccess()
+        coEvery { mockClient.revokeDevice("pk-device-1", "test reason", "pk-device-1") } returns Result.failure(RuntimeException("server error"))
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -140,18 +156,19 @@ class DeviceViewModelTest {
     }
 
     @Test
-    fun `revoke device auth payload binds revoked_by matching repository call`() = runTest {
-        coEvery { mockRepository.listDevices() } returns Result.success(mockDevices)
+    fun `revoke device auth payload binds revoked_by matching client call`() = runTest {
+        coEvery { mockClient.listDevices() } returns Result.success(mockDevices)
         val revokedDevice = mockDevices[0].copy(status = "revoked")
-        coEvery { mockRepository.revokeDevice("pk-device-1", "test reason", "pk-device-1") } returns Result.success(revokedDevice)
+        coEvery { mockClient.revokeDevice("pk-device-1", "test reason", "pk-device-1") } returns Result.success(revokedDevice)
 
-        // Capture the auth payload sent to AuthCoordinator
-        val capturedPayloads = mutableListOf<JsonObject>()
+
+        val capturedPayloads = mutableListOf<com.jlucraft.console.data.model.AuthPayload>()
         coEvery {
-            mockAuthCoordinator.authenticateForOperation(any(), any(), any(), any())
+            mockAuthCoordinator.authenticateForOperationWithDeviceKey(any(), any(), any(), any())
         } answers {
-            capturedPayloads.add(arg<JsonObject>(1))
-            Result.success(Unit)
+            val payloadFactory = arg<(String) -> com.jlucraft.console.data.model.AuthPayload>(1)
+            capturedPayloads.add(payloadFactory("pk-device-1"))
+            Result.success("pk-device-1")
         }
 
         val viewModel = createViewModel()
@@ -160,24 +177,24 @@ class DeviceViewModelTest {
         viewModel.revokeDevice("pk-device-1", "test reason")
         advanceUntilIdle()
 
-        // Verify auth payload contains all three bound fields
-        val payload = capturedPayloads.single()
-        assertEquals("pk-device-1", payload["target_pubkey"]?.jsonPrimitive?.content)
-        assertEquals("test reason", payload["reason"]?.jsonPrimitive?.content)
-        assertEquals("pk-device-1", payload["revoked_by"]?.jsonPrimitive?.content)
 
-        // Verify repository was called with the identical revokedBy
-        coVerify(exactly = 1) { mockRepository.revokeDevice("pk-device-1", "test reason", "pk-device-1") }
+        val payload = capturedPayloads.single() as RevokeDevicePayload
+        assertEquals("pk-device-1", payload.targetPubkey)
+        assertEquals("test reason", payload.reason)
+        assertEquals("pk-device-1", payload.revokedBy)
+
+
+        coVerify(exactly = 1) { mockClient.revokeDevice("pk-device-1", "test reason", "pk-device-1") }
     }
 
-    // ── Emergency revoke ──
+
 
     @Test
     fun `emergency revoke device succeeds and refreshes list`() = runTest {
-        coEvery { mockRepository.listDevices() } returns Result.success(mockDevices)
+        coEvery { mockClient.listDevices() } returns Result.success(mockDevices)
         val revokedDevice = mockDevices[0].copy(status = "revoked")
-        coEvery { mockRepository.emergencyRevokeDevice("pk-device-1", "emergency", "pk-device-1") } returns Result.success(revokedDevice)
-        coEvery { mockAuthCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns Result.success(Unit)
+        coEvery { mockClient.emergencyRevokeDevice("pk-device-1", "emergency", "pk-device-1") } returns Result.success(revokedDevice)
+        mockDeviceKeyAuthSuccess()
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -186,21 +203,22 @@ class DeviceViewModelTest {
         advanceUntilIdle()
 
         assertEquals("设备已紧急吊销", viewModel.uiState.value.revokeSuccess)
-        coVerify(exactly = 1) { mockRepository.emergencyRevokeDevice("pk-device-1", "emergency", "pk-device-1") }
+        coVerify(exactly = 1) { mockClient.emergencyRevokeDevice("pk-device-1", "emergency", "pk-device-1") }
     }
 
     @Test
-    fun `emergency revoke device auth payload binds revoked_by matching repository call`() = runTest {
-        coEvery { mockRepository.listDevices() } returns Result.success(mockDevices)
+    fun `emergency revoke device auth payload binds revoked_by matching client call`() = runTest {
+        coEvery { mockClient.listDevices() } returns Result.success(mockDevices)
         val revokedDevice = mockDevices[0].copy(status = "revoked")
-        coEvery { mockRepository.emergencyRevokeDevice("pk-device-1", "emergency", "pk-device-1") } returns Result.success(revokedDevice)
+        coEvery { mockClient.emergencyRevokeDevice("pk-device-1", "emergency", "pk-device-1") } returns Result.success(revokedDevice)
 
-        val capturedPayloads = mutableListOf<JsonObject>()
+        val capturedPayloads = mutableListOf<com.jlucraft.console.data.model.AuthPayload>()
         coEvery {
-            mockAuthCoordinator.authenticateForOperation(any(), any(), any(), any())
+            mockAuthCoordinator.authenticateForOperationWithDeviceKey(any(), any(), any(), any())
         } answers {
-            capturedPayloads.add(arg<JsonObject>(1))
-            Result.success(Unit)
+            val payloadFactory = arg<(String) -> com.jlucraft.console.data.model.AuthPayload>(1)
+            capturedPayloads.add(payloadFactory("pk-device-1"))
+            Result.success("pk-device-1")
         }
 
         val viewModel = createViewModel()
@@ -209,31 +227,31 @@ class DeviceViewModelTest {
         viewModel.emergencyRevokeDevice("pk-device-1", "emergency")
         advanceUntilIdle()
 
-        val payload = capturedPayloads.single()
-        assertEquals("pk-device-1", payload["target_pubkey"]?.jsonPrimitive?.content)
-        assertEquals("emergency", payload["reason"]?.jsonPrimitive?.content)
-        assertEquals("pk-device-1", payload["revoked_by"]?.jsonPrimitive?.content)
+        val payload = capturedPayloads.single() as com.jlucraft.console.data.model.EmergencyRevokeDevicePayload
+        assertEquals("pk-device-1", payload.targetPubkey)
+        assertEquals("emergency", payload.reason)
+        assertEquals("pk-device-1", payload.revokedBy)
 
-        coVerify(exactly = 1) { mockRepository.emergencyRevokeDevice("pk-device-1", "emergency", "pk-device-1") }
+        coVerify(exactly = 1) { mockClient.emergencyRevokeDevice("pk-device-1", "emergency", "pk-device-1") }
     }
 
-    // ── Get current pubkey ──
+
 
     @Test
     fun `get current pubkey returns tee auth public key`() = runTest {
-        coEvery { mockRepository.listDevices() } returns Result.success(mockDevices)
+        coEvery { mockClient.listDevices() } returns Result.success(mockDevices)
         val viewModel = createViewModel()
         advanceUntilIdle()
 
         assertEquals("pk-device-1", viewModel.getCurrentPubkey())
-        verify(exactly = 1) { mockTeeAuth.getPublicKey() }
+        verify(exactly = 1) { mockTeeAuth.tryGetPublicKey() }
     }
 
-    // ── Clear revoke status ──
+
 
     @Test
     fun `clear revoke status resets status fields`() = runTest {
-        coEvery { mockRepository.listDevices() } returns Result.success(mockDevices)
+        coEvery { mockClient.listDevices() } returns Result.success(mockDevices)
         val viewModel = createViewModel()
         advanceUntilIdle()
 

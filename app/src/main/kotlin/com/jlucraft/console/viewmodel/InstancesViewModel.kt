@@ -37,7 +37,7 @@ data class InstancesUiState(
     val logs: List<String> = emptyList(),
     val logsLoading: Boolean = false,
     val logsError: String? = null,
-    // Batch operation state
+
     val isBatchMode: Boolean = false,
     val selectedInstanceIds: Set<String> = emptySet(),
     val batchOperationInProgress: Boolean = false,
@@ -46,7 +46,7 @@ data class InstancesUiState(
     val batchTotal: Int = 0,
     val batchErrors: List<String> = emptyList(),
     val batchAborted: Boolean = false,
-    // Config update state
+
     val showConfigDialog: Boolean = false,
     val configUpdateError: String? = null
 )
@@ -235,7 +235,7 @@ class InstancesViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(operationError = null)
     }
 
-    // --- Batch operations ---
+
 
     fun toggleBatchMode() {
         _uiState.value = _uiState.value.copy(

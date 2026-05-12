@@ -26,16 +26,8 @@ import com.jlucraft.console.ui.theme.StatusAmber
 import com.jlucraft.console.ui.theme.StatusGreen
 import kotlinx.coroutines.launch
 
-/**
- * Bottom sheet for scheduler simulation.
+
  *
- * Calls POST /v1/instances/{instanceId}/scheduling/simulate
- * with provided constraints and displays the predicted placement result:
- *  - Selected peer
- *  - Score
- *  - Alternative eligible hosts
- *  - Constraint violations / rejection reasons
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SchedulerSimulationSheet(
@@ -151,7 +143,7 @@ fun SchedulerSimulationSheet(
 
 @Composable
 private fun SimulationResultContent(sim: SchedulingSimulation) {
-    // Current host
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -174,7 +166,7 @@ private fun SimulationResultContent(sim: SchedulingSimulation) {
 
     Spacer(modifier = Modifier.height(8.dp))
 
-    // Would migrate?
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -211,7 +203,7 @@ private fun SimulationResultContent(sim: SchedulingSimulation) {
         }
     }
 
-    // Eligible hosts
+
     if (sim.eligibleHosts.isNotEmpty()) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
@@ -245,7 +237,7 @@ private fun SimulationResultContent(sim: SchedulingSimulation) {
         }
     }
 
-    // Constraint violations
+
     if (sim.constraintViolations.isNotEmpty()) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(

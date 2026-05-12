@@ -15,11 +15,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jlucraft.console.app.AppServices
+import com.jlucraft.console.data.auth.AuthStateHolder
+import com.jlucraft.console.data.auth.ReadOnlyMode
 import com.jlucraft.console.data.model.Instance
 import com.jlucraft.console.data.model.SchedulingConstraints
 import com.jlucraft.console.data.model.SchedulingPreset
 import com.jlucraft.console.data.model.SchedulingSimulation
 import com.jlucraft.console.data.model.kindText
+import com.jlucraft.console.ui.components.ReadOnlyModeBanner
 import com.jlucraft.console.ui.components.statusColor
 import com.jlucraft.console.ui.components.statusText
 import com.jlucraft.console.ui.theme.StatusAmber
@@ -35,6 +38,8 @@ fun SchedulingScreen(
     onBack: (() -> Unit)? = null
 ) {
     val state = viewModel.uiState.value
+    val readOnlyState by AuthStateHolder.readOnlyMode.collectAsState()
+    val isReadOnly = readOnlyState is ReadOnlyMode.ReadOnly
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(initialInstanceId) {
@@ -102,7 +107,13 @@ fun SchedulingScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Instance ID input
+            if (isReadOnly) {
+                item {
+                    ReadOnlyModeBanner(readOnlyState)
+                }
+            }
+
+
             item {
                 var instanceIdInput by rememberSaveable { mutableStateOf(state.instanceId) }
                 OutlinedTextField(
@@ -128,7 +139,7 @@ fun SchedulingScreen(
                 )
             }
 
-            // Error display
+
             if (listError != null) {
                 item {
                     Card(
@@ -146,7 +157,7 @@ fun SchedulingScreen(
                 }
             }
 
-            // Instance picker: shown when no instanceId is set
+
             if (state.instanceId.isBlank()) {
                 item {
                     Text(
@@ -231,7 +242,7 @@ fun SchedulingScreen(
                 }
             }
 
-            // Preset selector
+
             if (state.instanceId.isNotBlank()) {
                 item {
                     Text(
@@ -276,7 +287,7 @@ fun SchedulingScreen(
                     }
                 }
 
-                // Constraints display
+
                 state.constraints?.let { constraints ->
                     item {
                         Text(
@@ -291,7 +302,7 @@ fun SchedulingScreen(
                     }
                 }
 
-                // Action buttons
+
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -313,7 +324,7 @@ fun SchedulingScreen(
                                 viewModel.applyConstraints("手动调整调度约束")
                             },
                             modifier = Modifier.weight(1f),
-                            enabled = state.constraints != null && !state.isApplying
+                            enabled = state.constraints != null && !state.isApplying && !isReadOnly
                         ) {
                             if (state.isApplying) {
                                 CircularProgressIndicator(
@@ -328,7 +339,7 @@ fun SchedulingScreen(
                     }
                 }
 
-                // Simulation result
+
                 if (state.simError != null) {
                     item {
                         Card(
@@ -358,7 +369,7 @@ fun SchedulingScreen(
                     item { SimulationResultCard(simResult) }
                 }
 
-                // Apply result
+
                 state.applyResult?.let { applyResult ->
                     item {
                         Text(

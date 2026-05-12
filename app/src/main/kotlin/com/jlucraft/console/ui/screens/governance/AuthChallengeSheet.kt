@@ -17,18 +17,8 @@ import com.jlucraft.console.ui.theme.StatusAmber
 import com.jlucraft.console.ui.theme.StatusGreen
 import com.jlucraft.console.ui.theme.StatusRed
 
-/**
- * Bottom sheet that displays an [AuthChallenge] with:
- *   - Human-readable summary of the pending operation
- *   - Risk level (color-coded: low=green, medium=amber, high=red)
- *   - Required role for authorization
- *   - Command type being executed
- *   - Real-time countdown timer (TTL in seconds)
+
  *
- * The user can confirm (trigger TEE signing) or cancel.
- * Used as the UI confirmation step in the canonical 3-step signed command flow:
- *   create → display challenge → sign → respond
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AuthChallengeSheet(
@@ -51,7 +41,7 @@ fun AuthChallengeSheet(
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // ── Header ──
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -69,7 +59,7 @@ fun AuthChallengeSheet(
                 )
             }
 
-            // ── Challenge summary ──
+
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -90,7 +80,7 @@ fun AuthChallengeSheet(
                 }
             }
 
-            // ── Details grid ──
+
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -108,7 +98,7 @@ fun AuthChallengeSheet(
                 }
             }
 
-            // ── Countdown ──
+
             val countdownColor = when {
                 countdownSeconds > 30 -> StatusGreen
                 countdownSeconds > 10 -> StatusAmber
@@ -141,7 +131,7 @@ fun AuthChallengeSheet(
                 }
             }
 
-            // ── Action buttons ──
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -215,7 +205,7 @@ private fun DetailRow(
     }
 }
 
-/** Map risk_level string to a semantic color. */
+
 @Composable
 private fun riskLevelColor(riskLevel: String): androidx.compose.ui.graphics.Color {
     return when (riskLevel.lowercase()) {

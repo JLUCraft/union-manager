@@ -8,7 +8,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.auth.TeeAuthManager
-import com.jlucraft.console.data.auth.withAuthenticatedOperation
 import com.jlucraft.console.domain.auth.AuthenticatedOperationUseCase
 import com.jlucraft.console.data.model.ArchiveSeasonPayload
 import com.jlucraft.console.data.model.AuthPayload
@@ -21,8 +20,12 @@ import com.jlucraft.console.data.model.CreateTournamentProposalPayload
 import com.jlucraft.console.data.model.CreateTournamentRequest
 import com.jlucraft.console.data.model.DisputeMatch
 import com.jlucraft.console.data.model.DisputeResolveProposalPayload
+import com.jlucraft.console.data.model.JudgeMatchPayload
 import com.jlucraft.console.data.model.Match
+import com.jlucraft.console.data.model.PauseMatchPayload
 import com.jlucraft.console.data.model.Proposal
+import com.jlucraft.console.data.model.ResetMatchPayload
+import com.jlucraft.console.data.model.ResumeMatchPayload
 import com.jlucraft.console.data.model.ScoringRules
 import com.jlucraft.console.data.model.Season
 import com.jlucraft.console.data.model.Leaderboard
@@ -52,14 +55,14 @@ data class LeagueUiState(
     val leaderboard: Leaderboard? = null,
     val seasonLoading: Boolean = false,
     val seasonError: String? = null,
-    // Dispute state
+
     val disputes: List<DisputeMatch> = emptyList(),
     val selectedDispute: DisputeMatch? = null,
     val disputesLoading: Boolean = false,
     val disputesError: String? = null,
     val showCreateDisputeDialog: Boolean = false,
     val disputeCreateError: String? = null,
-    // Multi-sig proposal tracking for large tournaments and dispute resolutions
+
     val pendingProposal: Proposal? = null,
     val proposalError: String? = null,
     val isCreatingProposal: Boolean = false
@@ -112,7 +115,7 @@ class LeagueViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(showCreateDialog = false, createError = null)
     }
 
-    // ── Direct tournament creation (for small/quick tournaments) ──
+
 
     fun createTournament(
         name: String,
@@ -125,45 +128,41 @@ class LeagueViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(createError = null)
-            val request = CreateTournamentRequest(
-                name = name,
-                game_type = gameType,
-                mode = mode,
-                schedule = TournamentSchedule(
-                    registration_open = registrationOpen,
-                    registration_close = registrationClose,
-                    matches = emptyList()
-                ),
-                scoring = ScoringRules(),
-                min_member_score = minMemberScore,
-                max_participants = maxParticipants,
-                created_by = teeAuth.getPublicKey()
-            )
-            val payload = CreateTournamentPayload(
-                name = name,
-                gameType = gameType,
-                mode = mode,
-                maxParticipants = maxParticipants,
-                minMemberScore = minMemberScore,
-                registrationOpen = registrationOpen,
-                registrationClose = registrationClose,
-                createdBy = teeAuth.getPublicKey()
-            )
-            val authResult = authCoordinator.withAuthenticatedOperation(
+            val result = authenticatedOperation.executeUsingDeviceKey(
                 cmdType = "create-tournament",
-                payload = payload,
+                payload = { createdBy ->
+                    CreateTournamentPayload(
+                        name = name,
+                        gameType = gameType,
+                        mode = mode,
+                        maxParticipants = maxParticipants,
+                        minMemberScore = minMemberScore,
+                        registrationOpen = registrationOpen,
+                        registrationClose = registrationClose,
+                        createdBy = createdBy
+                    )
+                },
                 title = "创建赛事",
-                subtitle = "请验证身份以创建赛事"
-            ) {
-                client.createTournament(request)
-            }
-            if (authResult.isFailure) {
-                _uiState.value = _uiState.value.copy(
-                    createError = authResult.exceptionOrNull()?.message ?: "认证失败"
-                )
-                return@launch
-            }
-            val result = authResult.getOrThrow()
+                subtitle = "请验证身份以创建赛事",
+                operation = { createdBy ->
+                    val request = CreateTournamentRequest(
+                        name = name,
+                        game_type = gameType,
+                        mode = mode,
+                        schedule = TournamentSchedule(
+                            registration_open = registrationOpen,
+                            registration_close = registrationClose,
+                            matches = emptyList()
+                        ),
+                        scoring = ScoringRules(),
+                        min_member_score = minMemberScore,
+                        max_participants = maxParticipants,
+                        created_by = createdBy
+                    )
+                    client.createTournament(request)
+                },
+                failureMessage = "创建失败"
+            )
             if (result.isSuccess) {
                 _uiState.value = _uiState.value.copy(showCreateDialog = false)
                 refresh()
@@ -175,13 +174,8 @@ class LeagueViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Create a large tournament via multi-sig governance proposal.
+
      *
-     * This is the required path when maxParticipants exceeds a federation-configured
-     * threshold (e.g. > 64), or when the tournament spans multiple clubs. The proposal
-     * must be signed by a quorum of admins before the tournament is created.
-     */
     fun createTournamentViaProposal(
         name: String,
         gameType: String,
@@ -194,7 +188,6 @@ class LeagueViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isCreatingProposal = true, createError = null)
 
-            val proposer = teeAuth.getPublicKey()
             val propPayload = CreateTournamentProposalPayload(
                 name = name,
                 gameType = gameType,
@@ -213,23 +206,14 @@ class LeagueViewModel @Inject constructor(
                 )
             )
 
-            val authResult = authCoordinator.withAuthenticatedOperation(
+            val result = authenticatedOperation.executeUsingDeviceKey(
                 cmdType = "create-proposal",
-                payload = CreateProposalAuthPayload("create-tournament", propPayload, proposer),
+                payload = { proposer -> CreateProposalAuthPayload("create-tournament", propPayload, proposer) },
                 title = "创建赛事提案",
-                subtitle = "大型赛事需要多签审批，请验证身份以提交提案"
-            ) {
-                client.createProposal("create-tournament", propPayload, proposer)
-            }
-            if (authResult.isFailure) {
-                _uiState.value = _uiState.value.copy(
-                    isCreatingProposal = false,
-                    createError = authResult.exceptionOrNull()?.message ?: "认证失败"
-                )
-                return@launch
-            }
-
-            val result = authResult.getOrThrow()
+                subtitle = "大型赛事需要多签审批，请验证身份以提交提案",
+                operation = { proposer -> client.createProposal("create-tournament", propPayload, proposer) },
+                failureMessage = "提案创建失败"
+            )
 
             result
                 .onSuccess { proposal ->
@@ -249,23 +233,17 @@ class LeagueViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Resolve a match dispute via multi-sig governance proposal.
+
      *
-     * Disputes that affect tournament rankings or involve contested evidence
-     * are routed through a governance proposal rather than direct admin action.
-     * This ensures quorum consensus for dispute resolution.
-     */
     fun resolveDisputeViaProposal(
         disputeId: String,
         resolution: String,
-        status: String, // "resolved" | "dismissed"
+        status: String,
         tournamentId: String? = null
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isCreatingProposal = true, disputesError = null)
 
-            val proposer = teeAuth.getPublicKey()
             val propPayload = DisputeResolveProposalPayload(
                 disputeId = disputeId,
                 resolution = resolution,
@@ -273,23 +251,14 @@ class LeagueViewModel @Inject constructor(
                 tournamentId = tournamentId
             )
 
-            val authResult = authCoordinator.withAuthenticatedOperation(
+            val result = authenticatedOperation.executeUsingDeviceKey(
                 cmdType = "create-proposal",
-                payload = CreateProposalAuthPayload("dispute-resolve", propPayload, proposer),
+                payload = { proposer -> CreateProposalAuthPayload("dispute-resolve", propPayload, proposer) },
                 title = "争议处理提案",
-                subtitle = "争议处理需要多签审批，请验证身份以提交提案"
-            ) {
-                client.createProposal("dispute-resolve", propPayload, proposer)
-            }
-            if (authResult.isFailure) {
-                _uiState.value = _uiState.value.copy(
-                    isCreatingProposal = false,
-                    disputesError = authResult.exceptionOrNull()?.message ?: "认证失败"
-                )
-                return@launch
-            }
-
-            val result = authResult.getOrThrow()
+                subtitle = "争议处理需要多签审批，请验证身份以提交提案",
+                operation = { proposer -> client.createProposal("dispute-resolve", propPayload, proposer) },
+                failureMessage = "提案创建失败"
+            )
 
             result
                 .onSuccess { proposal ->
@@ -317,6 +286,8 @@ class LeagueViewModel @Inject constructor(
             detailError = null
         )
         loadTournamentDetail(tournament.id)
+        loadDisputes(tournament.id)
+        loadSeasons()
     }
 
     fun clearSelection() {
@@ -410,7 +381,7 @@ class LeagueViewModel @Inject constructor(
         }
     }
 
-    // ── Dispute handling ───────────────────────────────────────────
+
 
     fun loadDisputes(tournamentId: String? = null) {
         viewModelScope.launch {
@@ -455,13 +426,75 @@ class LeagueViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(selectedDispute = null)
     }
 
-    // resolveDispute removed — dispute resolution must go through
-    // resolveDisputeViaProposal (multi-sig governance proposal) to
-    // prevent single-admin bypass of the governance quorum.
 
-    /** Clear the pending proposal tracker. */
+
+
+
+
     fun clearPendingProposal() {
         _uiState.value = _uiState.value.copy(pendingProposal = null)
+    }
+
+
+
+    fun pauseMatch(matchId: String) {
+        performAuthenticatedOperation(
+            cmdType = "pause-match",
+            payload = PauseMatchPayload(matchId),
+            title = "暂停比赛",
+            subtitle = "请验证身份以暂停比赛",
+            operation = { client.pauseMatch(matchId) },
+            failureMessage = "暂停比赛失败"
+        )
+    }
+
+    fun resumeMatch(matchId: String) {
+        performAuthenticatedOperation(
+            cmdType = "resume-match",
+            payload = ResumeMatchPayload(matchId),
+            title = "恢复比赛",
+            subtitle = "请验证身份以恢复比赛",
+            operation = { client.resumeMatch(matchId) },
+            failureMessage = "恢复比赛失败"
+        )
+    }
+
+    fun resetMatch(matchId: String) {
+        performAuthenticatedOperation(
+            cmdType = "reset-match",
+            payload = ResetMatchPayload(matchId),
+            title = "重置比赛",
+            subtitle = "请验证身份以重置比赛",
+            operation = { client.resetMatch(matchId) },
+            failureMessage = "重置比赛失败"
+        )
+    }
+
+    fun judgeMatch(matchId: String, winnerId: String, reason: String) {
+        performAuthenticatedOperation(
+            cmdType = "judge-match",
+            payload = JudgeMatchPayload(matchId, winnerId, reason),
+            title = "判定胜负",
+            subtitle = "请验证身份以判定比赛胜负",
+            operation = { client.judgeMatch(matchId, winnerId, reason) },
+            failureMessage = "判定胜负失败"
+        )
+    }
+
+
+
+    fun copySeasonTemplate(seasonId: String) {
+        val season = _uiState.value.seasons.find { it.id == seasonId } ?: return
+        val newName = "${season.name} (副本)"
+        val now = java.time.Instant.now().toString()
+        performAuthenticatedOperation(
+            cmdType = "create-season",
+            payload = CreateSeasonPayload(newName, now, now),
+            title = "复制赛季模板",
+            subtitle = "请验证身份以复制赛季",
+            operation = { client.createSeason(newName, now, now) },
+            failureMessage = "复制赛季模板失败"
+        )
     }
 
     private fun <T> performAuthenticatedOperation(

@@ -14,10 +14,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
-/**
- * Hilt module providing repositories and coordinator services.
- * All depend on [Libp2pClient] for cluster communication.
- */
+
 @Module
 @InstallIn(SingletonComponent::class)
 object ServiceModule {

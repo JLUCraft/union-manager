@@ -4,17 +4,9 @@ import android.util.Log
 import com.jlucraft.console.data.local.PushRuntimeConfigStore
 import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 
-/**
- * Service for fetching or initializing server-side push configuration via libp2p.
+
  *
- * Flow:
- * 1. GetPushConfig on /control/v1 → check if server has push config.
- * 2. If not configured, InitPushConfig → trigger server-side generation.
- * 3. Save vapid_public_key to local persistent store.
  *
- * UnifiedPush remains the Android notification transport; this service
- * manages the server-side push configuration over the libp2p control channel.
- */
 class PushConfigService(
     private val client: Libp2pClient,
     private val configStore: PushRuntimeConfigStore,

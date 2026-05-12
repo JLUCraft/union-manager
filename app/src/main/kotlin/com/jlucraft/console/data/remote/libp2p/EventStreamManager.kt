@@ -20,53 +20,31 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Manages event subscriptions over libp2p streams.
+
  *
- * Uses topic-filtered [SubscribeEventsRequest] streams as defined in the
- * protocol migration matrix.
  *
- * Each subscription opens a bidi stream on the events protocol, sends a
- * [SubscribeEventsRequest] with topic filters, and yields [EventEnvelope]
- * frames. On disconnect, subscriptions auto-retry with exponential backoff.
  *
- * Topics follow the convention:
- * - `cluster` — cluster health, alerts, node status
- * - `governance` — proposals, credentials, member changes
- * - `tournament.{uuid}` — tournament and match events
- * - `instance.{uuid}` — instance lifecycle events
- * - `instance.{uuid}.log` — instance log stream
- * - `oracle` — oracle report publications
- * - `system` — announcements, version updates
- * - `auth.{challenge_id}` — auth challenge events
- */
 class EventStreamManager(
     private val transport: Libp2pTransport,
     private val eventProtocolId: String,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** Active subscriptions keyed by topic filter. */
+
     private val subscriptions = ConcurrentHashMap<String, Subscription>()
 
-    /** All events received across all subscriptions. */
+
     private val _events = MutableSharedFlow<EventEnvelope>(extraBufferCapacity = 256)
     val events: SharedFlow<EventEnvelope> = _events.asSharedFlow()
 
-    /** Number of active topic subscriptions. */
+
     private val _activeSubscriptionCount = MutableStateFlow(0)
     val activeSubscriptionCount: StateFlow<Int> = _activeSubscriptionCount.asStateFlow()
 
-    /**
-     * Subscribe to events matching [topics].
+
      *
-     * @param topics list of topic filters (e.g. ["cluster", "governance"])
-     * @param groupKey stable key used for lifecycle management — subsequent calls
-     *        with the same key replace the previous subscription
-     * @return flow of [EventEnvelope] frames for the subscribed topics
-     */
     fun subscribe(topics: List<String>, groupKey: String): Flow<EventEnvelope> {
-        // Cancel previous subscription with the same key
+
         subscriptions.remove(groupKey)?.job?.cancel()
 
         val topicList = topics.toList()
@@ -87,28 +65,26 @@ class EventStreamManager(
         }
 
         val job = scope.launch {
-            flow.collect { /* side effect: emission handled in flow body */ }
+            flow.collect {  }
         }
 
         subscriptions[groupKey] = Subscription(topics = topicList, job = job)
         _activeSubscriptionCount.value = subscriptions.size
 
-        // Return a filtered view of the global event stream so callers
-        // get both existing and future events
+
+
         return _events.filter { envelope ->
             topicList.any { topic -> matchesTopic(envelope.topic, topic) }
         }
     }
 
-    /**
-     * Unsubscribe [groupKey]. The corresponding stream is cancelled.
-     */
+
     fun unsubscribe(groupKey: String) {
         subscriptions.remove(groupKey)?.job?.cancel()
         _activeSubscriptionCount.value = subscriptions.size
     }
 
-    /** Cancel all subscriptions and release resources. */
+
     fun shutdown() {
         subscriptions.values.forEach { it.job.cancel() }
         subscriptions.clear()
@@ -147,7 +123,7 @@ class EventStreamManager(
                 actualTopic.startsWith(prefix)
             }
             filter.endsWith(">") -> {
-                // prefix match for subscription convenience
+
                 actualTopic.startsWith(filter.dropLast(1))
             }
             else -> actualTopic == filter
@@ -166,13 +142,8 @@ class EventStreamManager(
     )
 }
 
-/**
- * Simplified event envelope delivered via libp2p event stream.
+
  *
- * Maps to `jlucraft.events.v1.EventEnvelope`. The [payload] field
- * contains the raw protobuf bytes of the typed event body (e.g.
- * `ClusterNodeReady`, `GovernanceStreamEvent`, etc.).
- */
 data class EventEnvelope(
     val topic: String,
     val eventType: String,

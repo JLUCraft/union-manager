@@ -1,7 +1,7 @@
 package com.jlucraft.console.data.remote
 
-import jlucraft.control.v1.Control.ControlRequest
-import jlucraft.control.v1.Control.GetNodeRequest
+import com.jlucraft.control.v1.ControlRequest
+import com.jlucraft.control.v1.GetNodeRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

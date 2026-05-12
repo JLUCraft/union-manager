@@ -15,9 +15,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jlucraft.console.app.AppServices
+import com.jlucraft.console.data.auth.ReadOnlyMode
 import com.jlucraft.console.data.model.Device
 import com.jlucraft.console.data.model.toShortDate
 import com.jlucraft.console.data.model.truncate
+import com.jlucraft.console.ui.components.ReadOnlyModeBanner
 import com.jlucraft.console.ui.theme.StatusGreen
 import com.jlucraft.console.viewmodel.DeviceViewModel
 
@@ -33,6 +35,8 @@ fun DeviceScreen(
     var showEmergencyRevokeDialog by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val currentPubkey = remember { viewModel.getCurrentPubkey() }
+    val readOnlyMode = remember { viewModel.currentReadOnlyMode() }
+    val isReadOnly = readOnlyMode is ReadOnlyMode.ReadOnly
 
     LaunchedEffect(state.revokeSuccess) {
         val msg = state.revokeSuccess
@@ -114,10 +118,17 @@ fun DeviceScreen(
                 }
             }
 
+            if (isReadOnly) {
+                item {
+                    ReadOnlyModeBanner(readOnlyMode)
+                }
+            }
+
             items(state.devices, key = { it.pubkey }) { device ->
                 DeviceCard(
                     device = device,
                     currentPubkey = currentPubkey,
+                    readOnly = isReadOnly,
                     onRevoke = { showRevokeDialog = device.pubkey },
                     onEmergencyRevoke = { showEmergencyRevokeDialog = device.pubkey }
                 )
@@ -153,7 +164,8 @@ fun DeviceScreen(
 @Composable
 private fun DeviceCard(
     device: Device,
-    currentPubkey: String,
+    currentPubkey: String?,
+    readOnly: Boolean,
     onRevoke: () -> Unit,
     onEmergencyRevoke: () -> Unit
 ) {
@@ -244,7 +256,7 @@ private fun DeviceCard(
                 }
             }
 
-            if (!isRevoked) {
+            if (!isRevoked && !readOnly) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),

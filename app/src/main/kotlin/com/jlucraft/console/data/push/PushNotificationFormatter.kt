@@ -4,7 +4,7 @@ import com.jlucraft.console.data.model.*
 import com.jlucraft.console.data.remote.NotificationHelper
 
 object PushNotificationFormatter {
-    // Event types that should produce notifications
+
     val NOTIFICATION_EVENTS = setOf(
         "instance_crash", "node_offline", "alert_fired", "alert_resolved",
         "proposal_executed", "proposal_rejected", "match_dispute",

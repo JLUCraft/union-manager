@@ -8,7 +8,7 @@ fun String.toShortDate(): String = take(10)
 fun String.truncate(maxLength: Int, ellipsis: String = "..."): String =
     if (length > maxLength) take(maxLength) + ellipsis else this
 
-// ── Tournament / Match status enums (aligned with federated-server league.rs) ──
+
 
 @Serializable
 enum class TournamentStatus {
@@ -28,7 +28,7 @@ enum class MatchStatus {
     @SerialName("disputed") Disputed;
 }
 
-// ── Instance helpers ──
+
 
 val Instance.isStopped: Boolean get() = status.equals("stopped", ignoreCase = true)
 
@@ -61,20 +61,9 @@ fun Match.statusText(): String = when (status) {
     MatchStatus.Disputed -> "争议中"
 }
 
-/**
- * A federated-server cluster node as seen by the union-manager admin console.
+
  *
- * The [peerId] field is the **federated-server node's** libp2p identity
- * (Ed25519-derived PeerId). The union-manager is itself a libp2p peer that
- * communicates via protobuf [ControlRequest]/[ControlResponse] over libp2p
- * streams on the `/control/v1` protocol.
  *
- * [peerId] is used:
- *  - For display/identification in admin dashboards.
- *  - As a stable reference when issuing governance commands (proposal targeting,
- *    credential revocation, instance migration).
- *  - To correlate node health/score data.
- */
 @Serializable
 data class Node(
     val peerId: String,
@@ -91,7 +80,7 @@ data class Node(
 
 @Serializable
 data class AdmissionPolicy(
-    /** Valid values: "public", "vc-only", "mua-member", "club-only" */
+
     val mode: String,
     val allowed_clubs: List<String> = emptyList(),
     val allowed_players: List<String> = emptyList(),
@@ -246,11 +235,11 @@ data class NodeScore(
     val penalty: Double,
     val final_score: Double,
     val last_updated: String,
-    /** Optional resource usage (populated when scheduler data is available). */
+
     val cpu_usage: Float? = null,
     val memory_usage: Float? = null,
     val disk_usage: Float? = null,
-    /** Optional node labels from the cluster registry. */
+
     val labels: Map<String, String>? = null
 )
 
@@ -266,7 +255,7 @@ data class Tournament(
     val min_member_score: Int,
     val created_at: String,
     val created_by: String,
-    /** Optional server-side schedule fields populated when available. */
+
     val schedule: TournamentSchedule? = null,
     val scoring: ScoringRules? = null
 )
@@ -376,7 +365,7 @@ data class Leaderboard(
 @Serializable
 data class Device(
     val pubkey: String,
-    val status: String, // "active", "revoked"
+    val status: String,
     val platform: String,
     @SerialName("owner_peer_id") val ownerPeerId: String? = null,
     @SerialName("device_name") val deviceName: String? = null,

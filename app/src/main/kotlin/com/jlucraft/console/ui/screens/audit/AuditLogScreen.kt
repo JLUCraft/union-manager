@@ -37,7 +37,7 @@ import java.time.format.DateTimeFormatter
 private val auditDateFormat = DateTimeFormatter.ofPattern("MM-dd HH:mm")
     .withZone(ZoneId.systemDefault())
 
-// ── result filter options ──
+
 private val resultOptions = listOf(
     "all" to "全部",
     "success" to "成功",
@@ -55,7 +55,7 @@ fun AuditLogScreen(
     val entries = state.entries
     val displayEntries = if (state.isFiltered) state.filteredEntries else entries
 
-    // ── local text-field state for filter bar ──
+
     var timeStartText by remember(state.timeRangeStart) {
         mutableStateOf(state.timeRangeStart?.toString() ?: "")
     }
@@ -72,12 +72,12 @@ fun AuditLogScreen(
         mutableStateOf(state.searchText ?: "")
     }
 
-    // derive unique cmdType values from loaded entries
+
     val cmdTypeOptions = remember(entries) {
         listOf(null to "全部") + entries.map { it.cmdType }.distinct().sorted().map { it to it }
     }
 
-    // ── detail sheet ──
+
     val selectedEntry = state.selectedEntry
     if (selectedEntry != null) {
         AuditDetailSheet(
@@ -108,7 +108,7 @@ fun AuditLogScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // ── chain verification banner ──
+
             item {
                 state.chainVerification?.let { verification ->
                     val icon = if (verification.valid) Icons.Default.CheckCircle else Icons.Default.Error
@@ -143,7 +143,7 @@ fun AuditLogScreen(
                 }
             }
 
-            // ── local anomaly cards ──
+
             val localAnomalies = state.localAnomalies
             if (localAnomalies.isNotEmpty()) {
                 item {
@@ -189,7 +189,7 @@ fun AuditLogScreen(
                 }
             }
 
-            // ── filter bar ──
+
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -201,7 +201,7 @@ fun AuditLogScreen(
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Row 1: time range
+
                         Text("时间范围 (epoch 毫秒)", style = MaterialTheme.typography.labelSmall)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -225,7 +225,7 @@ fun AuditLogScreen(
                             )
                         }
 
-                        // Row 2: type dropdown + result dropdown
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -246,7 +246,7 @@ fun AuditLogScreen(
                             )
                         }
 
-                        // Row 3: trigger + target text fields
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -270,7 +270,7 @@ fun AuditLogScreen(
                             )
                         }
 
-                        // Row 4: full-text search
+
                         OutlinedTextField(
                             value = searchText,
                             onValueChange = { searchText = it },
@@ -280,7 +280,7 @@ fun AuditLogScreen(
                             textStyle = MaterialTheme.typography.bodySmall
                         )
 
-                        // Row 5: action buttons
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -326,7 +326,7 @@ fun AuditLogScreen(
                 }
             }
 
-            // ── record count header ──
+
             item {
                 val headerText = if (state.isFiltered) {
                     "显示 ${displayEntries.size}/${entries.size} 条记录"
@@ -357,7 +357,7 @@ fun AuditLogScreen(
     }
 }
 
-// ── clickable entry card ──
+
 
 @Composable
 private fun AuditEntryCard(entry: AuditEntry, onClick: () -> Unit) {
@@ -429,7 +429,7 @@ private fun AuditEntryCard(entry: AuditEntry, onClick: () -> Unit) {
     }
 }
 
-// ── filter dropdown ──
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -454,7 +454,7 @@ private fun FilterDropdown(
             readOnly = true,
             label = { Text(label, style = MaterialTheme.typography.labelSmall) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor(),
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
             textStyle = MaterialTheme.typography.bodySmall,
             singleLine = true
         )
@@ -475,7 +475,7 @@ private fun FilterDropdown(
     }
 }
 
-// ── detail bottom sheet ──
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

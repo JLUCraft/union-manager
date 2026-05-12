@@ -74,7 +74,7 @@ fun NodeScoresScreen(
                 NodeScoreCard(rank = index + 1, score = score)
             }
 
-            // Detail for selected node
+
             state.selectedNodeScore?.let { selected ->
                 item {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

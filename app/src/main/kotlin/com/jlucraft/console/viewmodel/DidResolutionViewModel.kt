@@ -1,5 +1,6 @@
 package com.jlucraft.console.viewmodel
 
+import android.util.Log
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
@@ -22,22 +23,19 @@ data class DidResolutionUiState(
     val error: String? = null
 )
 
-/**
- * ViewModel for the DID resolution screen.
+
  *
- * Calls DidResolver which uses:
- *  - Local did:key fast path
- *  - Server GET /v1/did/resolve?did=... for did:web and unknown methods
  *
- * Structured errors (invalidDid/methodNotSupported/notFound/resolutionFailed)
- * are surfaced in the UI.
- */
 @HiltViewModel
 class DidResolutionViewModel @Inject constructor(
     private val didResolver: DidResolver
 ) : ViewModel() {
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true; isLenient = true }
+
+    companion object {
+        private const val TAG = "DIDResolutionVM"
+    }
 
     private val _uiState = mutableStateOf(DidResolutionUiState())
     val uiState: State<DidResolutionUiState> = _uiState
@@ -68,6 +66,7 @@ class DidResolutionViewModel @Inject constructor(
                     is DidResolutionResult.Success -> try {
                         json.encodeToString(DidDocument.serializer(), result.document)
                     } catch (_: Exception) {
+                        Log.w(TAG, "Failed to serialize DID document to JSON")
                         null
                     }
                     else -> null

@@ -16,54 +16,41 @@ import com.jlucraft.console.data.remote.SignResponse
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
-/**
- * Central libp2p client for cluster communication.
+
  *
- * All business communication flows through this client using
- * protobuf-encoded [ControlRequest] / [ControlResponse] messages over
- * libp2p streams on the `/control/v1` protocol.
  *
- * Auth is carried via [AuthContext] on all mutating requests.
  *
- * The client does NOT expose transport details — callers work with
- * domain models and [Result] wrappers.
- */
 class Libp2pClient(
     private val transport: Libp2pTransport,
     private val controlProtocolId: String,
-    private val eventProtocolId: String,
 ) {
 
-    /** Current auth context, set after successful challenge/response. */
+
     @Volatile
     private var authContext: AuthContext? = null
 
-    /** Event subscription manager for cluster/governance/tournament topics. */
-    val events: EventStreamManager = EventStreamManager(transport, eventProtocolId)
 
-    // ── Auth context management ──
+    val events: EventStreamManager = EventStreamManager(transport, controlProtocolId)
+
+
 
     fun setAuthContext(ctx: AuthContext) { authContext = ctx }
     fun getAuthContext(): AuthContext? = authContext
     fun clearAuthContext() { authContext = null }
 
-    /**
-     * The local peer's libp2p identity. Null before [start] succeeds.
-     */
+
     fun localPeerId(): String? = transport.localPeerId()
 
-    /**
-     * Start the libp2p host. Must be called before any requests.
-     */
+
     suspend fun start(config: Libp2pConfig): Result<Unit> = transport.start(config)
 
-    /** Stop the libp2p host and cancel all subscriptions. */
+
     suspend fun stop() {
         events.shutdown()
         transport.stop()
     }
 
-    // ── Generic request/response ──
+
 
     private suspend fun send(request: ControlRequest): Result<ControlResponse> {
         val requestBytes = encodeControlRequest(request)
@@ -71,9 +58,9 @@ class Libp2pClient(
             .map { decodeControlResponse(it) }
     }
 
-    // ── Domain methods ──
 
-    // Cluster / Network
+
+
     suspend fun getClusterHealth(): Result<ClusterHealthResponse> =
         send(ControlRequest.GetClusterHealth(newRequestId()))
             .mapResponse { (it as? ControlResponse.ClusterHealth)?.data ?: unexpected(it) }
@@ -82,7 +69,7 @@ class Libp2pClient(
         send(ControlRequest.GetNetwork(newRequestId()))
             .mapResponse { (it as? ControlResponse.NetworkSnapshot)?.data ?: unexpected(it) }
 
-    // Instances
+
     suspend fun getInstances(): Result<List<Instance>> =
         send(ControlRequest.ListInstances(newRequestId()))
             .mapResponse { (it as? ControlResponse.InstanceList)?.instances ?: unexpected(it) }
@@ -127,7 +114,7 @@ class Libp2pClient(
         send(ControlRequest.UpdateInstanceConfig(instanceId, config, newRequestId()))
             .mapResponse { (it as? ControlResponse.InstanceDetail)?.instance ?: unexpected(it) }
 
-    // Scheduling
+
     suspend fun getSchedulingConstraints(instanceId: String): Result<SchedulingConstraints> =
         send(ControlRequest.GetSchedulingConstraints(instanceId, newRequestId()))
             .mapResponse { (it as? ControlResponse.SchedulingConstraints)?.data ?: unexpected(it) }
@@ -140,7 +127,7 @@ class Libp2pClient(
         send(ControlRequest.SimulateScheduling(instanceId, constraints, newRequestId()))
             .mapResponse { (it as? ControlResponse.SchedulingSimulation)?.data ?: unexpected(it) }
 
-    // Auth
+
     suspend fun requestChallenge(request: AuthRequest): Result<AuthChallenge> =
         send(ControlRequest.RequestChallenge(request, newRequestId()))
             .mapResponse { (it as? ControlResponse.AuthChallengeResponse)?.challenge ?: unexpected(it) }
@@ -149,7 +136,7 @@ class Libp2pClient(
         send(ControlRequest.VerifySignature(response, newRequestId()))
             .mapResponse { (it as? ControlResponse.AuthVerificationResult)?.result ?: unexpected(it) }
 
-    // Commands
+
     suspend fun createCommand(request: AuthRequest): Result<AuthChallenge> =
         send(ControlRequest.CreateCommand(request, newRequestId()))
             .mapResponse { (it as? ControlResponse.AuthChallengeResponse)?.challenge ?: unexpected(it) }
@@ -158,7 +145,7 @@ class Libp2pClient(
         send(ControlRequest.RespondCommand(challengeId, response, newRequestId()))
             .mapResponse { (it as? ControlResponse.CommandResultResponse)?.result ?: unexpected(it) }
 
-    // Proposals
+
     suspend fun listProposals(): Result<List<Proposal>> =
         send(ControlRequest.ListProposals(newRequestId()))
             .mapResponse { (it as? ControlResponse.ProposalList)?.proposals ?: unexpected(it) }
@@ -191,7 +178,7 @@ class Libp2pClient(
         send(ControlRequest.SubmitProposalDraft(id, newRequestId()))
             .mapResponse { (it as? ControlResponse.ProposalDetail)?.proposal ?: unexpected(it) }
 
-    // Audit
+
     suspend fun listAuditEntries(cmdType: String? = null, limit: Int = 100): Result<List<AuditEntry>> =
         send(ControlRequest.ListAuditEntries(cmdType, limit, newRequestId()))
             .mapResponse { (it as? ControlResponse.AuditEntryList)?.entries ?: unexpected(it) }
@@ -204,7 +191,7 @@ class Libp2pClient(
         send(ControlRequest.ListAuditAnomalies(newRequestId()))
             .mapResponse { (it as? ControlResponse.AuditAnomalyList)?.anomalies ?: unexpected(it) }
 
-    // Alerts
+
     suspend fun listAlerts(severity: String? = null, includeResolved: Boolean = false): Result<List<Alert>> =
         send(ControlRequest.ListAlerts(severity, includeResolved, newRequestId()))
             .mapResponse { (it as? ControlResponse.AlertList)?.alerts ?: unexpected(it) }
@@ -217,7 +204,7 @@ class Libp2pClient(
         send(ControlRequest.ResolveAlert(alertId, newRequestId()))
             .mapResponse { (it as? ControlResponse.AlertUpdated)?.alert ?: unexpected(it) }
 
-    // Tournaments
+
     suspend fun listTournaments(): Result<List<Tournament>> =
         send(ControlRequest.ListTournaments(newRequestId()))
             .mapResponse { (it as? ControlResponse.TournamentList)?.tournaments ?: unexpected(it) }
@@ -242,7 +229,7 @@ class Libp2pClient(
         send(ControlRequest.ListTeams(newRequestId()))
             .mapResponse { (it as? ControlResponse.TeamList)?.teams ?: unexpected(it) }
 
-    // Disputes
+
     suspend fun listDisputes(tournamentId: String? = null): Result<List<DisputeMatch>> =
         send(ControlRequest.ListDisputes(tournamentId, newRequestId()))
             .mapResponse { (it as? ControlResponse.DisputeList)?.disputes ?: unexpected(it) }
@@ -255,7 +242,24 @@ class Libp2pClient(
         send(ControlRequest.CreateDispute(tournamentId, request, newRequestId()))
             .mapResponse { (it as? ControlResponse.DisputeDetail)?.dispute ?: unexpected(it) }
 
-    // Seasons
+
+    suspend fun pauseMatch(matchId: String): Result<Match> =
+        send(ControlRequest.PauseMatch(matchId, newRequestId()))
+            .mapResponse { (it as? ControlResponse.MatchUpdated)?.match ?: unexpected(it) }
+
+    suspend fun resumeMatch(matchId: String): Result<Match> =
+        send(ControlRequest.ResumeMatch(matchId, newRequestId()))
+            .mapResponse { (it as? ControlResponse.MatchUpdated)?.match ?: unexpected(it) }
+
+    suspend fun resetMatch(matchId: String): Result<Match> =
+        send(ControlRequest.ResetMatch(matchId, newRequestId()))
+            .mapResponse { (it as? ControlResponse.MatchUpdated)?.match ?: unexpected(it) }
+
+    suspend fun judgeMatch(matchId: String, winnerId: String, reason: String): Result<Match> =
+        send(ControlRequest.JudgeMatch(matchId, winnerId, reason, newRequestId()))
+            .mapResponse { (it as? ControlResponse.MatchUpdated)?.match ?: unexpected(it) }
+
+
     suspend fun listSeasons(): Result<List<Season>> =
         send(ControlRequest.ListSeasons(newRequestId()))
             .mapResponse { (it as? ControlResponse.SeasonList)?.seasons ?: unexpected(it) }
@@ -280,7 +284,7 @@ class Libp2pClient(
         send(ControlRequest.CreateSeason(name, startDate, endDate, newRequestId()))
             .mapResponse { (it as? ControlResponse.SeasonDetail)?.season ?: unexpected(it) }
 
-    // Devices
+
     suspend fun listDevices(): Result<List<Device>> =
         send(ControlRequest.ListDevices(newRequestId()))
             .mapResponse { (it as? ControlResponse.DeviceList)?.devices ?: unexpected(it) }
@@ -293,7 +297,7 @@ class Libp2pClient(
         send(ControlRequest.EmergencyRevokeDevice(pubkey, reason, revokedBy, newRequestId()))
             .mapResponse { (it as? ControlResponse.DeviceUpdated)?.device ?: unexpected(it) }
 
-    // Members / VC / DID
+
     suspend fun listMembers(): Result<List<MemberSummary>> =
         send(ControlRequest.ListMembers(newRequestId()))
             .mapResponse { (it as? ControlResponse.MemberList)?.members ?: unexpected(it) }
@@ -303,8 +307,8 @@ class Libp2pClient(
             .mapResponse {
                 when (it) {
                     is ControlResponse.CredentialIssued -> it.response
-                    // Server responds with MEMBER_MUTATION (no credential_type in response);
-                    // synthesize from request context and the status field.
+
+
                     is ControlResponse.UnitSuccess -> IssueCredentialResponse(
                         subjectDid = request.subjectDid,
                         credentialType = "",
@@ -350,7 +354,7 @@ class Libp2pClient(
         send(ControlRequest.ResolveDid(did, newRequestId()))
             .mapResponse { (it as? ControlResponse.DidResolution)?.response ?: unexpected(it) }
 
-    // Node scores
+
     suspend fun listNodeScores(): Result<List<NodeScore>> =
         send(ControlRequest.ListNodeScores(newRequestId()))
             .mapResponse { (it as? ControlResponse.NodeScoreList)?.scores ?: unexpected(it) }
@@ -359,12 +363,12 @@ class Libp2pClient(
         send(ControlRequest.GetNodeScore(peerId, newRequestId()))
             .mapResponse { (it as? ControlResponse.NodeScoreDetail)?.score ?: unexpected(it) }
 
-    // Oracle
+
     suspend fun getOracleScore(playerId: String): Result<OracleScore> =
         send(ControlRequest.GetOracleScore(playerId, newRequestId()))
             .mapResponse { (it as? ControlResponse.OracleScoreResult)?.score ?: unexpected(it) }
 
-    // Push management (via libp2p — UnifiedPush is notification-only)
+
     suspend fun registerPushEndpoint(endpoint: String, devicePubkey: String): Result<Unit> =
         send(ControlRequest.RegisterPushEndpoint(endpoint, devicePubkey, newRequestId()))
             .mapUnit()
@@ -390,33 +394,25 @@ class Libp2pClient(
         send(ControlRequest.UpdatePushPreferences(enabledEventTypes, dndEnabled, dndStartHour, dndEndHour, newRequestId()))
             .mapResponse { (it as? ControlResponse.PushPreferences)?.preferences ?: unexpected(it) }
 
-    // ── Event subscriptions ──
 
-    /**
-     * Subscribe to governance events (proposals, credentials, member changes).
-     */
+
+
     fun subscribeGovernanceEvents(): Flow<EventEnvelope> =
         events.subscribe(topics = listOf("governance"), groupKey = "governance")
 
-    /**
-     * Subscribe to cluster events (health, alerts, node status).
-     */
+
     fun subscribeClusterEvents(): Flow<EventEnvelope> =
         events.subscribe(topics = listOf("cluster"), groupKey = "cluster")
 
-    /**
-     * Subscribe to tournament events for a specific tournament.
-     */
+
     fun subscribeTournamentEvents(tournamentId: String): Flow<EventEnvelope> =
         events.subscribe(topics = listOf("tournament.$tournamentId"), groupKey = "tournament.$tournamentId")
 
-    /**
-     * Subscribe to instance events for a specific instance.
-     */
+
     fun subscribeInstanceEvents(instanceId: String): Flow<EventEnvelope> =
         events.subscribe(topics = listOf("instance.$instanceId"), groupKey = "instance.$instanceId")
 
-    // ── Internal helpers ──
+
 
     private fun newRequestId(): String = UUID.randomUUID().toString()
 
@@ -437,16 +433,16 @@ class Libp2pClient(
             when (response) {
                 is ControlResponse.Error -> throw Libp2pProtocolException(response.code, response.message)
                 is ControlResponse.UnitSuccess -> Unit
-                else -> Unit // Treat any non-error as success
+                else -> Unit
             }
         }
 
-    // ── Codec: ControlRequest → protobuf bytes ──
+
 
     private fun encodeControlRequest(request: ControlRequest): ByteArray =
         ControlRequestEncoder.encode(request, authContext)
 
-    // ── Codec: bytes → ControlResponse ──
+
 
     private fun decodeControlResponse(bytes: ByteArray): ControlResponse =
         ControlResponseDecoder.decode(bytes)

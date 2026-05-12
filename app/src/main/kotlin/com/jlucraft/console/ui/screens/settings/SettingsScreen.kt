@@ -12,11 +12,13 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jlucraft.console.app.AppServices
+import com.jlucraft.console.data.auth.AuthStateHolder
+import com.jlucraft.console.data.auth.ReadOnlyMode
 import com.jlucraft.console.data.local.SettingsStore
+import com.jlucraft.console.ui.components.ReadOnlyModeBanner
 import com.jlucraft.console.ui.navigation.AppRoute
 import com.jlucraft.console.ui.screens.audit.AuditLogScreen
 import com.jlucraft.console.ui.screens.oracle.OracleProofPanel
@@ -91,6 +93,8 @@ private fun SettingsListScreen(
     onClearBiometricResult: () -> Unit,
     onNavigate: ((AppRoute) -> Unit)? = null,
 ) {
+    val readOnlyState by AuthStateHolder.readOnlyMode.collectAsState()
+    val isReadOnly = readOnlyState is ReadOnlyMode.ReadOnly
     Scaffold(
         topBar = {
             TopAppBar(
@@ -115,6 +119,12 @@ private fun SettingsListScreen(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                 )
+            }
+
+            if (isReadOnly) {
+                item {
+                    ReadOnlyModeBanner(readOnlyState)
+                }
             }
 
             item {
@@ -294,7 +304,7 @@ private fun SettingsListScreen(
                 HorizontalDivider()
             }
 
-            // ── Onboarding ──────────────────────────────────────
+
 
             item {
                 Text(
@@ -329,7 +339,7 @@ private fun SettingsListScreen(
                 HorizontalDivider()
             }
 
-            // ── Push preferences ────────────────────────────────
+
 
             item {
                 Text(
@@ -342,7 +352,7 @@ private fun SettingsListScreen(
 
             item {
                 val pushState = state
-                // DND section
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -355,7 +365,8 @@ private fun SettingsListScreen(
                             Spacer(modifier = Modifier.weight(1f))
                             Switch(
                                 checked = pushState.dndEnabled,
-                                onCheckedChange = { viewModel.setDndEnabled(it) }
+                                onCheckedChange = { viewModel.setDndEnabled(it) },
+                                enabled = !isReadOnly
                             )
                         }
                         if (pushState.dndEnabled) {
@@ -372,6 +383,7 @@ private fun SettingsListScreen(
                                     onValueChange = { viewModel.setDndStartHour(it.toInt()) },
                                     valueRange = 0f..23f,
                                     steps = 22,
+                                    enabled = !isReadOnly,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text("${pushState.dndStartHour}h", style = MaterialTheme.typography.labelSmall)
@@ -386,6 +398,7 @@ private fun SettingsListScreen(
                                     onValueChange = { viewModel.setDndEndHour(it.toInt()) },
                                     valueRange = 0f..23f,
                                     steps = 22,
+                                    enabled = !isReadOnly,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text("${pushState.dndEndHour}h", style = MaterialTheme.typography.labelSmall)
@@ -418,14 +431,14 @@ private fun SettingsListScreen(
                         Switch(
                             checked = isEnabled,
                             onCheckedChange = { viewModel.togglePushEventType(eventType) },
-                            enabled = !isForced
+                            enabled = !isForced && !isReadOnly
                         )
                     }
                 )
                 HorizontalDivider()
             }
 
-            // ── About ────────────────────────────────────────────
+
 
             item {
                 Text(
@@ -485,7 +498,7 @@ private fun AuditLogSubScreen(services: AppServices, onBack: () -> Unit) {
 }
 
 
-// ── Oracle Proof Sub-Screen ─────────────────────────────────────────
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun OracleProofSubScreen(

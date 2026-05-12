@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RemoveCircle
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Warning
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.jlucraft.console.app.AppServices
+import com.jlucraft.console.data.auth.AuthStateHolder
+import com.jlucraft.console.data.auth.ReadOnlyMode
 import com.jlucraft.console.ui.components.StatusChip
 import com.jlucraft.console.ui.navigation.AppRoute
 import com.jlucraft.console.ui.theme.*
@@ -39,6 +43,7 @@ import com.jlucraft.console.data.model.Instance
 import com.jlucraft.console.data.model.isStopped
 import com.jlucraft.console.data.model.kindText
 import com.jlucraft.console.ui.components.AdminQuickLinksCard
+import com.jlucraft.console.ui.components.ReadOnlyModeBanner
 import com.jlucraft.console.ui.components.statusColor
 import com.jlucraft.console.ui.components.statusText
 import com.jlucraft.console.viewmodel.InstancesViewModel
@@ -52,6 +57,8 @@ fun InstancesScreen(
     onNavigate: ((AppRoute) -> Unit)? = null,
 ) {
     val state = viewModel.uiState.value
+    val readOnlyState by AuthStateHolder.readOnlyMode.collectAsState()
+    val isReadOnly = readOnlyState is ReadOnlyMode.ReadOnly
 
     if (state.selectedInstance != null) {
         InstanceDetailScreen(
@@ -126,7 +133,7 @@ fun InstancesScreen(
                         TextButton(onClick = { viewModel.selectAllInstances() }) {
                             Text("全选")
                         }
-                    } else {
+                    } else if (!isReadOnly) {
                         TextButton(onClick = { viewModel.toggleBatchMode() }) {
                             Text("批量")
                         }
@@ -142,7 +149,7 @@ fun InstancesScreen(
             )
         },
         floatingActionButton = {
-            if (!state.isBatchMode) {
+            if (!state.isBatchMode && !isReadOnly) {
                 FloatingActionButton(onClick = { showCreateDialog = true }) {
                     Icon(Icons.Default.Add, contentDescription = "创建实例")
                 }
@@ -153,6 +160,7 @@ fun InstancesScreen(
             if (state.isBatchMode) {
                 BatchOperationBar(
                     selectedCount = state.selectedInstanceIds.size,
+                    enabled = !isReadOnly,
                     onStart = { viewModel.batchStart() },
                     onStop = { viewModel.batchStop() },
                     onMigrate = {
@@ -178,6 +186,13 @@ fun InstancesScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+
+            if (isReadOnly) {
+                item {
+                    ReadOnlyModeBanner(readOnlyState)
+                }
+            }
+
             item {
                 val statusCounts = state.instances.groupBy { it.status }.mapValues { it.value.size }
                 Row(
@@ -198,7 +213,7 @@ fun InstancesScreen(
                 }
             }
 
-            // Admin utility quick links
+
             if (onNavigate != null) {
                 item {
                     AdminQuickLinksCard(onNavigate)
@@ -466,6 +481,7 @@ private fun InstanceCard(
 @Composable
 private fun BatchOperationBar(
     selectedCount: Int,
+    enabled: Boolean,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onMigrate: () -> Unit
@@ -488,7 +504,7 @@ private fun BatchOperationBar(
                 OutlinedButton(
                     onClick = onStart,
                     modifier = Modifier.weight(1f),
-                    enabled = selectedCount > 0
+                    enabled = enabled && selectedCount > 0
                 ) {
             Icon(Icons.Default.PlayArrow, contentDescription = "启动", modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(4.dp))
@@ -497,7 +513,7 @@ private fun BatchOperationBar(
                     OutlinedButton(
                         onClick = onStop,
                         modifier = Modifier.weight(1f),
-                        enabled = selectedCount > 0,
+                        enabled = enabled && selectedCount > 0,
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.error
                         )
@@ -509,7 +525,7 @@ private fun BatchOperationBar(
                 OutlinedButton(
                     onClick = onMigrate,
                     modifier = Modifier.weight(1f),
-                    enabled = selectedCount > 0
+                    enabled = enabled && selectedCount > 0
                 ) {
                     Text("迁移")
                 }
@@ -698,7 +714,7 @@ private fun CreateInstanceDialog(
                     }
                 }
 
-                // Club-specific fields for club-only and mua-member modes
+
                 if (admissionMode == "club-only" || admissionMode == "mua-member") {
                     OutlinedTextField(
                         value = allowedClubs,
@@ -713,7 +729,7 @@ private fun CreateInstanceDialog(
                     )
                 }
 
-                // Universal player whitelist
+
                 OutlinedTextField(
                     value = allowedPlayers,
                     onValueChange = { allowedPlayers = it },
@@ -722,7 +738,7 @@ private fun CreateInstanceDialog(
                     placeholder = { Text("PeerID 白名单，留空表示不限制") }
                 )
 
-                // Email verification fields for vc-only mode
+
                 if (admissionMode == "vc-only") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
@@ -878,7 +894,7 @@ private fun ConfigUpdateDialog(
     var envValue by rememberSaveable { mutableStateOf("") }
     val envEntries = remember { mutableListOf<Pair<String, String>>() }
 
-    // Admission fields pre-populated from current instance config
+
     var admissionMode by rememberSaveable { mutableStateOf(currentAdmission?.mode ?: "public") }
     var allowedClubs by rememberSaveable { mutableStateOf(currentAdmission?.allowed_clubs?.joinToString(", ") ?: "") }
     var allowedPlayers by rememberSaveable { mutableStateOf(currentAdmission?.allowed_players?.joinToString(", ") ?: "") }
@@ -948,7 +964,7 @@ private fun ConfigUpdateDialog(
                     }
                 }
 
-                // Admission policy section
+
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "准入策略",
@@ -981,7 +997,7 @@ private fun ConfigUpdateDialog(
                     }
                 }
 
-                // Club-specific fields for club-only and mua-member modes
+
                 if (admissionMode == "club-only" || admissionMode == "mua-member") {
                     OutlinedTextField(
                         value = allowedClubs,
@@ -996,7 +1012,7 @@ private fun ConfigUpdateDialog(
                     )
                 }
 
-                // Universal player whitelist
+
                 OutlinedTextField(
                     value = allowedPlayers,
                     onValueChange = { allowedPlayers = it },
@@ -1005,7 +1021,7 @@ private fun ConfigUpdateDialog(
                     placeholder = { Text("PeerID 白名单，留空表示不限制") }
                 )
 
-                // Email verification fields for vc-only mode
+
                 if (admissionMode == "vc-only") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
@@ -1050,5 +1066,4 @@ private fun ConfigUpdateDialog(
         }
     )
 }
-
 

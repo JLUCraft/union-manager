@@ -3,32 +3,27 @@ package com.jlucraft.console.data.remote
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.jlucraft.console.ui.MainActivity
 
 object NotificationHelper {
+    private const val TAG = "NotificationHelper"
     const val CHANNEL_PUSH = "union_push"
     const val CHANNEL_ALERTS = "union_alerts"
     const val CHANNEL_AUTH_CHALLENGE = "union_auth_challenge"
     private const val NOTIFICATION_ID_BASE = 5000
 
-    /** Intent extra key for AuthChallenge deep-link routing. */
+
     const val EXTRA_AUTH_CHALLENGE_EVENT = "auth_challenge_event"
 
     fun createChannels(context: Context) {
         com.jlucraft.console.data.push.NotificationChannelRegistry.createChannels(context)
     }
 
-    /**
-     * Show a notification.
+
      *
-     * @param context       Android context
-     * @param title         Notification title
-     * @param body          Notification body text
-     * @param channelId     Notification channel
-     * @param intentAction  Optional custom action for deep-linking (e.g. "ACTION_AUTH_CHALLENGE")
-     */
     fun show(
         context: Context,
         title: String,
@@ -73,6 +68,7 @@ object NotificationHelper {
                 notification
             )
         } catch (_: SecurityException) {
+            Log.w(TAG, "Notification not permitted, skipping")
         }
     }
 }

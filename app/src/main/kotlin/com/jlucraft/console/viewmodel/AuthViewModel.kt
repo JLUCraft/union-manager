@@ -6,7 +6,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.auth.TeeAuthManager
+import com.jlucraft.console.data.auth.ReadOnlyDeviceException
 import com.jlucraft.console.data.model.AuthPayload
 import com.jlucraft.console.data.remote.AuthRequest
 import com.jlucraft.console.data.remote.SignResponse
@@ -32,7 +34,8 @@ sealed class AuthUiState {
 @HiltViewModel
 class AuthViewModel @Inject constructor(
     private val client: Libp2pClient,
-    private val teeAuth: TeeAuthManager
+    private val teeAuth: TeeAuthManager,
+    private val authCoordinator: AuthCoordinator
 ) : ViewModel() {
 
     private val _uiState = mutableStateOf<AuthUiState>(AuthUiState.Idle)
@@ -46,10 +49,16 @@ class AuthViewModel @Inject constructor(
     private var pendingPublicKey: String? = null
 
     fun initiateAuth(cmdType: String, payload: AuthPayload) {
+        authCoordinator.requireWriteCapability().onFailure {
+            _uiState.value = AuthUiState.Error(it.message ?: "设备处于只读模式")
+            return
+        }
         viewModelScope.launch {
             _uiState.value = AuthUiState.Loading
             try {
-                val publicKey = teeAuth.getPublicKey()
+                val publicKey = teeAuth.tryGetPublicKey().getOrElse {
+                    throw ReadOnlyDeviceException.fromCapability(teeAuth.capability)
+                }
                 val request = AuthRequest(
                     cmd_type = cmdType,
                     payload = payload,
@@ -88,9 +97,15 @@ class AuthViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.value = AuthUiState.Loading
+            authCoordinator.requireWriteCapability().onFailure {
+                _uiState.value = AuthUiState.Error(it.message ?: "设备处于只读模式")
+                return@launch
+            }
             try {
                 val message = "JLUCraftAuthV1||$challengeId||$nonce||$cmdType||$payloadHash||$expiresAt".toByteArray()
-                val signature = teeAuth.sign(message)
+                val signature = teeAuth.trySign(message).getOrElse {
+                    throw ReadOnlyDeviceException.fromCapability(teeAuth.capability)
+                }
                 val signatureB64 = Base64.getEncoder().encodeToString(signature)
 
                 val response = SignResponse(

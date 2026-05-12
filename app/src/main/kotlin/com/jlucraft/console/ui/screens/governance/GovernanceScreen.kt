@@ -19,6 +19,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jlucraft.console.app.AppServices
+import com.jlucraft.console.data.auth.AuthStateHolder
+import com.jlucraft.console.data.auth.ReadOnlyMode
 import com.jlucraft.console.data.model.MemberSummary
 import com.jlucraft.console.data.model.Proposal
 import com.jlucraft.console.data.model.ProposalSignature
@@ -29,6 +31,7 @@ import com.jlucraft.console.data.model.statusText
 import com.jlucraft.console.data.model.truncate
 import com.jlucraft.console.ui.components.statusColor
 import com.jlucraft.console.ui.components.DetailRow
+import com.jlucraft.console.ui.components.ReadOnlyModeBanner
 import com.jlucraft.console.ui.components.StatusChip
 import com.jlucraft.console.ui.components.listStatePlaceholders
 import com.jlucraft.console.ui.theme.*
@@ -44,7 +47,9 @@ fun GovernanceScreen(
     viewModel: GovernanceViewModel = viewModel(),
 ) {
     val state = viewModel.uiState.value
-    // CommandViewModel for AuthChallengeSheet demonstration (sensitive op sample)
+    val readOnlyState by AuthStateHolder.readOnlyMode.collectAsState()
+    val isReadOnly = readOnlyState is ReadOnlyMode.ReadOnly
+
     val commandViewModel: CommandViewModel = viewModel()
     val commandState = commandViewModel.uiState.value
 
@@ -59,7 +64,7 @@ fun GovernanceScreen(
                     TextButton(onClick = { viewModel.refresh() }) {
                         Text("刷新")
                     }
-                    // Stream status indicator
+
                     when (state.streamStatus) {
                         StreamStatus.CONNECTED -> {
                             TextButton(onClick = {}) {
@@ -82,7 +87,7 @@ fun GovernanceScreen(
             )
         },
         floatingActionButton = {
-            if (state.activeTab == "proposals") {
+            if (state.activeTab == "proposals" && !isReadOnly) {
                 FloatingActionButton(onClick = { viewModel.showCreateDialog() }) {
                     Icon(Icons.Default.Add, contentDescription = "创建提案")
                 }
@@ -90,7 +95,7 @@ fun GovernanceScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
-            // Tab row
+
             PrimaryTabRow(selectedTabIndex = if (state.activeTab == "members") 1 else 0) {
                 Tab(
                     selected = state.activeTab == "proposals",
@@ -110,13 +115,20 @@ fun GovernanceScreen(
                 )
             }
 
+            if (isReadOnly) {
+                ReadOnlyModeBanner(
+                    readOnlyState,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+
             if (state.lastEvent != null) {
                 StreamActivityBanner(state = state)
             }
 
             when (state.activeTab) {
-                "members" -> MembersTab(viewModel, state, commandViewModel)
-                else -> ProposalsTab(viewModel, state, commandViewModel)
+                "members" -> MembersTab(viewModel, state, readOnly = isReadOnly)
+                else -> ProposalsTab(viewModel, state, commandViewModel, readOnly = isReadOnly)
             }
         }
     }
@@ -136,6 +148,7 @@ fun GovernanceScreen(
             proposal = proposal,
             isSigning = state.isSigning,
             signError = state.signError,
+            readOnly = isReadOnly,
             onDismiss = { viewModel.dismissProposalDetail() },
             onSign = { viewModel.signSelectedProposal() },
             onExecute = { viewModel.executeProposal(proposal.id) },
@@ -144,7 +157,7 @@ fun GovernanceScreen(
         )
     }
 
-    // ── AuthChallengeSheet (sensitive operation sample) ──
+
     commandState.challenge?.let { challenge ->
         AuthChallengeSheet(
             challenge = challenge,
@@ -155,7 +168,7 @@ fun GovernanceScreen(
         )
     }
 
-    // ── Command result dialog ──
+
     commandState.resultMessage?.let { msg ->
         AlertDialog(
             onDismissRequest = { commandViewModel.clearResult() },
@@ -169,7 +182,7 @@ fun GovernanceScreen(
         )
     }
 
-    // ── VC Result Sheet ──
+
     if (state.showVcResultSheet) {
         VcResultSheet(
             vcJson = state.issuedVcJson,
@@ -214,13 +227,14 @@ private fun StreamActivityBanner(state: com.jlucraft.console.viewmodel.Governanc
     }
 }
 
-// ── Proposals Tab ─────────────────────────────────────────────────
+
 
 @Composable
 private fun ProposalsTab(
     viewModel: GovernanceViewModel,
     state: com.jlucraft.console.viewmodel.GovernanceUiState,
-    commandViewModel: CommandViewModel
+    commandViewModel: CommandViewModel,
+    readOnly: Boolean
 ) {
     val proposals = state.proposals
     val statusCounts = remember(proposals) {
@@ -253,7 +267,7 @@ private fun ProposalsTab(
             )
         }
 
-        // ── Auth Challenge Demo (sensitive operation sample) ──
+
         item {
             OutlinedButton(
                 onClick = {
@@ -265,7 +279,8 @@ private fun ProposalsTab(
                         )
                     )
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !readOnly
             ) {
                 Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
@@ -289,13 +304,13 @@ private fun ProposalsTab(
     }
 }
 
-// ── Members Tab ───────────────────────────────────────────────────
+
 
 @Composable
 private fun MembersTab(
     viewModel: GovernanceViewModel,
     state: com.jlucraft.console.viewmodel.GovernanceUiState,
-    commandViewModel: CommandViewModel
+    readOnly: Boolean
 ) {
     val members = state.members
 
@@ -321,13 +336,13 @@ private fun MembersTab(
         )
 
         items(members, key = { it.subjectDid }) { member ->
-            MemberCard(member = member, viewModel = viewModel)
+            MemberCard(member = member, viewModel = viewModel, readOnly = readOnly)
         }
     }
 }
 
 @Composable
-private fun MemberCard(member: MemberSummary, viewModel: GovernanceViewModel) {
+private fun MemberCard(member: MemberSummary, viewModel: GovernanceViewModel, readOnly: Boolean) {
     var showRoleDialog by remember { mutableStateOf(false) }
     var showIssueDialog by remember { mutableStateOf(false) }
     var showRevokeDialog by remember { mutableStateOf(false) }
@@ -371,28 +386,30 @@ private fun MemberCard(member: MemberSummary, viewModel: GovernanceViewModel) {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = { showRoleDialog = true },
-                    modifier = Modifier.weight(1f)
+            if (!readOnly) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("角色", style = MaterialTheme.typography.labelSmall)
-                }
-                OutlinedButton(
-                    onClick = { showIssueDialog = true },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("签发", style = MaterialTheme.typography.labelSmall)
-                }
-                OutlinedButton(
-                    onClick = { showRevokeDialog = true },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("吊销", style = MaterialTheme.typography.labelSmall)
+                    OutlinedButton(
+                        onClick = { showRoleDialog = true },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("角色", style = MaterialTheme.typography.labelSmall)
+                    }
+                    OutlinedButton(
+                        onClick = { showIssueDialog = true },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("签发", style = MaterialTheme.typography.labelSmall)
+                    }
+                    OutlinedButton(
+                        onClick = { showRevokeDialog = true },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("吊销", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }
@@ -486,7 +503,7 @@ private fun RoleGrantDialog(
     )
 }
 
-// ── Proposal Components (unchanged) ────────────────────────────────
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -578,6 +595,7 @@ private fun ProposalDetailBottomSheet(
     proposal: Proposal,
     isSigning: Boolean,
     signError: String?,
+    readOnly: Boolean,
     onDismiss: () -> Unit,
     onSign: () -> Unit,
     onExecute: () -> Unit,
@@ -677,7 +695,11 @@ private fun ProposalDetailBottomSheet(
                 ) {
                     when (proposal.status) {
                         "draft" -> {
-                            Button(onClick = onSubmitDraft, modifier = Modifier.weight(1f)) {
+                            Button(
+                                onClick = onSubmitDraft,
+                                modifier = Modifier.weight(1f),
+                                enabled = !readOnly
+                            ) {
                                 Text("提交草案")
                             }
                         }
@@ -685,7 +707,7 @@ private fun ProposalDetailBottomSheet(
                             Button(
                                 onClick = onSign,
                                 modifier = Modifier.weight(1f),
-                                enabled = !isSigning
+                                enabled = !isSigning && !readOnly
                             ) {
                                 if (isSigning) {
                                     CircularProgressIndicator(
@@ -700,13 +722,18 @@ private fun ProposalDetailBottomSheet(
                             OutlinedButton(
                                 onClick = onReject,
                                 modifier = Modifier.weight(1f),
+                                enabled = !readOnly,
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                             ) {
                                 Text("否决")
                             }
                         }
                         "approved" -> {
-                            Button(onClick = onExecute, modifier = Modifier.weight(1f)) {
+                            Button(
+                                onClick = onExecute,
+                                modifier = Modifier.weight(1f),
+                                enabled = !readOnly
+                            ) {
                                 Text("执行提案")
                             }
                         }

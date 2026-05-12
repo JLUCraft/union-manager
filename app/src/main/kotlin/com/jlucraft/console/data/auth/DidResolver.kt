@@ -14,17 +14,9 @@ import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Local DID resolver and VC verifier.
+
  *
- * Supports:
- *  - did:key resolution (offline — extract public key from the DID identifier)
- *  - did:web resolution (online — via libp2p DID endpoint)
- *  - VC signature verification against resolved DID documents
  *
- * This is a client-side complement to the server's DID/VC infrastructure.
- * The server remains authoritative for federation-wide verification.
- */
 class DidResolver(
     private val client: Libp2pClient
 ) {
@@ -112,7 +104,7 @@ class DidResolver(
         )
     }
 
-    // ── Private helpers ──
+
 
     private fun resolveDidKey(did: String): DidResolutionResult {
         val multibase = did.removePrefix("did:key:")

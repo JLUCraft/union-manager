@@ -23,15 +23,8 @@ import com.jlucraft.console.data.model.VcVerificationResult
 import com.jlucraft.console.data.model.VerifiableCredential
 import com.jlucraft.console.ui.theme.StatusGreen
 
-/**
- * Bottom sheet displaying a Verifiable Credential JSON with copy and share actions.
+
  *
- * After a successful VC issuance or VC verification, this sheet shows:
- *   - The VC JSON (pretty-printed) for copy/share
- *   - Verification result if available
- *   - Copy to clipboard action
- *   - Share via Android share sheet action
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VcResultSheet(
@@ -55,7 +48,7 @@ fun VcResultSheet(
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // ── Header ──
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -81,7 +74,7 @@ fun VcResultSheet(
                 }
             }
 
-            // ── VC subject summary ──
+
             if (vc != null) {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -109,7 +102,7 @@ fun VcResultSheet(
                 }
             }
 
-            // ── Verification result ──
+
             if (verificationResult != null) {
                 val validColor = if (verificationResult.valid) StatusGreen else MaterialTheme.colorScheme.error
                 Card(
@@ -148,7 +141,7 @@ fun VcResultSheet(
                 }
             }
 
-            // ── VC JSON (copy/share target) ──
+
             if (vcJson != null && vcJson.isNotEmpty()) {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -182,7 +175,7 @@ fun VcResultSheet(
                 }
             }
 
-            // ── Action buttons ──
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)

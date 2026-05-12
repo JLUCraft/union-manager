@@ -15,7 +15,7 @@ private val Context.dataStore by preferencesDataStore(name = "settings")
 class SettingsStore(context: Context) {
     private val dataStore = context.applicationContext.dataStore
 
-    // ── Onboarding ──────────────────────────────────────────────
+
 
     val onboardingCompletedFlow: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[ONBOARDING_COMPLETED] ?: false
@@ -29,9 +29,9 @@ class SettingsStore(context: Context) {
         dataStore.edit { it[ONBOARDING_COMPLETED] = completed }
     }
 
-    // ── Push preferences ────────────────────────────────────────
 
-    /** Comma-separated list of enabled event types. */
+
+
     val pushEnabledEventTypesFlow: Flow<Set<String>> = dataStore.data.map { prefs ->
         prefs[PUSH_ENABLED_EVENT_TYPES]?.split(",")?.filter { it.isNotEmpty() }?.toSet() ?: DEFAULT_ENABLED_EVENT_TYPES
     }
@@ -44,7 +44,7 @@ class SettingsStore(context: Context) {
         dataStore.edit { it[PUSH_ENABLED_EVENT_TYPES] = types.joinToString(",") }
     }
 
-    /** Do-not-disturb start hour (0-23). */
+
     val dndStartHourFlow: Flow<Int> = dataStore.data.map { prefs ->
         prefs[DND_START_HOUR] ?: 22
     }
@@ -55,7 +55,7 @@ class SettingsStore(context: Context) {
         dataStore.edit { it[DND_START_HOUR] = hour.coerceIn(0, 23) }
     }
 
-    /** Do-not-disturb end hour (0-23). */
+
     val dndEndHourFlow: Flow<Int> = dataStore.data.map { prefs ->
         prefs[DND_END_HOUR] ?: 7
     }
@@ -66,7 +66,7 @@ class SettingsStore(context: Context) {
         dataStore.edit { it[DND_END_HOUR] = hour.coerceIn(0, 23) }
     }
 
-    /** Whether do-not-disturb is enabled. */
+
     val dndEnabledFlow: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[DND_ENABLED] ?: false
     }
@@ -77,7 +77,7 @@ class SettingsStore(context: Context) {
         dataStore.edit { it[DND_ENABLED] = enabled }
     }
 
-    // ── Libp2p identity ──────────────────────────────────────────────────────
+
 
     suspend fun getLibp2pPrivateKey(): String? =
         dataStore.data.map { it[LIBP2P_PRIVATE_KEY] }.first()
@@ -86,7 +86,7 @@ class SettingsStore(context: Context) {
         dataStore.edit { it[LIBP2P_PRIVATE_KEY] = base64Key }
     }
 
-    // ── Libp2p bootstrap peers ────────────────────────────────────────────────
+
 
     suspend fun getBootstrapPeers(): List<String> =
         dataStore.data.map { prefs ->
@@ -106,7 +106,7 @@ class SettingsStore(context: Context) {
         private val LIBP2P_PRIVATE_KEY = stringPreferencesKey("libp2p_private_key")
         private val LIBP2P_BOOTSTRAP_PEERS = stringPreferencesKey("libp2p_bootstrap_peers")
 
-        /** Always-force-enabled event types that cannot be disabled by the user. */
+
         val FORCE_ENABLED_EVENT_TYPES = setOf("AuthChallenge", "InstanceCrash")
 
         val DEFAULT_ENABLED_EVENT_TYPES = setOf(

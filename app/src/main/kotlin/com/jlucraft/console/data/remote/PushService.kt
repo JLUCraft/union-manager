@@ -6,13 +6,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import com.jlucraft.console.data.model.PushEventPayload
 
-/**
- * UnifiedPush-only event bus.
+
  *
- * Forwards push events from [UnionPushReceiver] to consumers (ViewModels etc.).
- * UnifiedPush is the sole push channel. `connect()`/`disconnect()` forward
- * events from [UnionPushReceiver] without performing network operations.
- */
 class PushService {
     private val _events = MutableSharedFlow<PushEvent>(
         replay = 0,
@@ -24,10 +19,7 @@ class PushService {
     private var job: Job? = null
     private var scope: CoroutineScope? = null
 
-    /**
-     * Start collecting UnifiedPush events from [UnionPushReceiver.pushEvents].
-     * Idempotent: if already collecting, this is a no-op.
-     */
+
     fun connect() {
         if (job?.isActive == true) return
         val newScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -39,7 +31,7 @@ class PushService {
         }
     }
 
-    /** Stop collecting UnifiedPush events. */
+
     fun disconnect() {
         job?.cancel()
         job = null

@@ -16,17 +16,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-/**
- * Typed payload for [Proposal] payloads, both sent and received from the server.
+
  *
- * When sent via the libp2p control protocol, [ProposalPayloadSerializer.toJsonElement] produces the
- * same flat JSON that the server expects. The companion [serializer] delegates to
- * the custom [ProposalPayloadSerializer].
- */
 @Serializable(with = ProposalPayloadSerializer::class)
 sealed interface ProposalPayload
 
-// -- Known proposal payloads --
+
 
 @Serializable
 data class AddNodeProposalPayload(
@@ -96,17 +91,15 @@ data class DisputeResolveProposalPayload(
     @SerialName("tournament_id") val tournamentId: String? = null
 ) : ProposalPayload
 
-/**
- * Unknown/custom proposal type — carries no dynamic data.
- */
+
 @Serializable
 data class UnknownProposalPayload(
     val type: String
 ) : ProposalPayload
 
-// ── Convenience accessors ──
 
-/** Extract a human-readable description for display in UI. */
+
+
 val ProposalPayload.description: String
     get() = when (this) {
         is AddNodeProposalPayload -> description
@@ -122,11 +115,11 @@ val ProposalPayload.description: String
         is UnknownProposalPayload -> type
     }
 
-/** Serialize to JSON string for use in signing (buildSignablePayload). */
+
 fun ProposalPayload.toJsonString(): String =
     ProposalPayloadSerializer.toJsonString(this)
 
-// ── Custom serializer: flat JSON for all proposal payloads ──
+
 
 @PublishedApi
 internal object ProposalPayloadSerializer : KSerializer<ProposalPayload> {
@@ -148,7 +141,7 @@ internal object ProposalPayloadSerializer : KSerializer<ProposalPayload> {
         return fromJsonElement(jsonObj)
     }
 
-    /** Convert typed payload to [JsonElement] for embedding in auth payloads. */
+
     fun toJsonElement(value: ProposalPayload): JsonObject = when (value) {
         is AddNodeProposalPayload -> buildJsonObject {
             put("description", value.description)
@@ -211,7 +204,7 @@ internal object ProposalPayloadSerializer : KSerializer<ProposalPayload> {
     }
 
     private fun fromJsonElement(jsonObj: JsonObject): ProposalPayload {
-        // Try to match known fields; fall back to UnknownProposalPayload.
+
         val hasDescription = jsonObj.containsKey("description")
         val hasTarget = jsonObj.containsKey("target")
         val desc = jsonObj["description"]?.jsonPrimitive?.content ?: ""
@@ -239,12 +232,12 @@ internal object ProposalPayloadSerializer : KSerializer<ProposalPayload> {
         }
     }
 
-    /** Convert [ProposalPayload] to JSON string for signing (buildSignablePayload). */
+
     fun toJsonString(value: ProposalPayload): String =
         kotlinx.serialization.json.Json.encodeToString(JsonObject.serializer(), toJsonElement(value))
 }
 
-/** Create the appropriate [ProposalPayload] for simple description/target proposal types. */
+
 fun proposalPayloadFor(type: String, description: String, target: String): ProposalPayload = when (type) {
     "add-node" -> AddNodeProposalPayload(description, target)
     "remove-node" -> RemoveNodeProposalPayload(description, target)

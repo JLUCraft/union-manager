@@ -64,7 +64,7 @@ fun InstanceDetailScreen(
     var constraintsLoading by remember { mutableStateOf(false) }
     var constraintsError by remember { mutableStateOf<String?>(null) }
 
-    // --- Log tool state ---
+
     val lazyListState = rememberLazyListState()
     var followTail by remember { mutableStateOf(true) }
     var isPaused by remember { mutableStateOf(false) }
@@ -72,13 +72,13 @@ fun InstanceDetailScreen(
     var showSearchField by remember { mutableStateOf(false) }
     var exportStatus by remember { mutableStateOf<String?>(null) }
 
-    // Client-side filtered logs
+
     val filteredLogs = remember(logs, searchQuery) {
         if (searchQuery.isBlank()) logs
         else logs.filter { it.contains(searchQuery, ignoreCase = true) }
     }
 
-    // Auto-follow: scroll to bottom when followTail is on and new logs arrive
+
     LaunchedEffect(logs.size, followTail, isPaused) {
         if (followTail && !isPaused && filteredLogs.isNotEmpty()) {
             snapshotFlow { lazyListState.layoutInfo.totalItemsCount }
@@ -87,7 +87,7 @@ fun InstanceDetailScreen(
         }
     }
 
-    // Clear export status after a delay
+
     LaunchedEffect(exportStatus) {
         if (exportStatus != null) {
             delay(4000)
@@ -95,7 +95,7 @@ fun InstanceDetailScreen(
         }
     }
 
-    // Export launcher: system file picker for saving logs
+
     val createDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/plain")
     ) { uri: Uri? ->
@@ -186,7 +186,7 @@ fun InstanceDetailScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // --- Instance detail card ---
+
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -229,7 +229,7 @@ fun InstanceDetailScreen(
 
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        // Scheduling constraints quick view
+
                         if (constraintsError != null) {
                             Text(
                                 text = "调度约束加载失败: $constraintsError",
@@ -279,7 +279,7 @@ fun InstanceDetailScreen(
                 }
             }
 
-            // --- Log control bar ---
+
             item {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
@@ -292,7 +292,7 @@ fun InstanceDetailScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Pause / Resume
+
                         IconButton(onClick = { isPaused = !isPaused }) {
                             Icon(
                                 imageVector = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
@@ -302,7 +302,7 @@ fun InstanceDetailScreen(
                             )
                         }
 
-                        // Follow-tail toggle
+
                         IconButton(
                             onClick = { followTail = !followTail },
                             enabled = !isPaused
@@ -315,7 +315,7 @@ fun InstanceDetailScreen(
                             )
                         }
 
-                        // Search toggle
+
                         IconButton(onClick = { showSearchField = !showSearchField }) {
                             Icon(
                                 imageVector = Icons.Default.Search,
@@ -325,7 +325,7 @@ fun InstanceDetailScreen(
                             )
                         }
 
-                        // Export
+
                         IconButton(
                             onClick = {
                                 createDocumentLauncher.launch("${instance.name}_logs.txt")
@@ -342,7 +342,7 @@ fun InstanceDetailScreen(
                 }
             }
 
-            // --- Search field (collapsible) ---
+
             if (showSearchField) {
                 item {
                     OutlinedTextField(
@@ -369,7 +369,7 @@ fun InstanceDetailScreen(
                 }
             }
 
-            // --- Paused indicator ---
+
             if (isPaused) {
                 item {
                     Row(
@@ -398,7 +398,7 @@ fun InstanceDetailScreen(
                 }
             }
 
-            // --- Log title ---
+
             item {
                 val countText = if (searchQuery.isNotBlank()) {
                     "${filteredLogs.size}/${logs.size} 行"
@@ -412,7 +412,7 @@ fun InstanceDetailScreen(
                 )
             }
 
-            // --- Placeholders for server-side states ---
+
             listStatePlaceholders(
                 isLoading = logsLoading,
                 error = logsError,
@@ -421,7 +421,7 @@ fun InstanceDetailScreen(
                 errorPrefix = "加载日志失败"
             )
 
-            // --- No-match indicator when filter exists but yields no results ---
+
             if (logs.isNotEmpty() && filteredLogs.isEmpty() && searchQuery.isNotEmpty()) {
                 item {
                     Text(
@@ -433,7 +433,7 @@ fun InstanceDetailScreen(
                 }
             }
 
-            // --- Log lines ---
+
             itemsIndexed(filteredLogs, key = { index, _ -> "log_$index" }) { _, line ->
                 val isMatch = searchQuery.isNotBlank() && line.contains(searchQuery, ignoreCase = true)
                 Surface(
@@ -455,7 +455,7 @@ fun InstanceDetailScreen(
                 }
             }
 
-            // --- Export status message ---
+
             if (exportStatus != null) {
                 item {
                     Surface(
@@ -501,7 +501,7 @@ fun InstanceDetailScreen(
                 }
             }
 
-            // Bottom spacer so the last line is not flush with the screen edge
+
             item {
                 Spacer(modifier = Modifier.height(16.dp))
             }

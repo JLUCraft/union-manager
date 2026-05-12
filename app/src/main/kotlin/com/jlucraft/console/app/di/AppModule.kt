@@ -16,13 +16,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
-/**
- * Hilt module providing core application-level singletons:
- * data stores, libp2p client/transport, TEE/biometric managers, and push service.
+
  *
- * There is no longer a server URL or baseUrl configuration.
- * The union-manager is a libp2p peer that connects via bootstrap peers.
- */
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
@@ -47,26 +42,20 @@ object AppModule {
     fun providePushService(): PushService =
         PushService()
 
-    /**
-     * The libp2p transport using jvm-libp2p. Loads or generates an Ed25519
-     * key pair via [SettingsStore] and connects to the bootstrap peers.
-     */
+
     @Provides
     @Singleton
     fun provideLibp2pTransport(settingsStore: SettingsStore): Libp2pTransport =
         Libp2pTransportImpl(settingsStore)
 
-    /**
-     * Libp2p peer configuration. Bootstrap peers are loaded from onboarding;
-     * key identity is managed by [Libp2pTransportImpl] via SettingsStore.
-     */
+
     @Provides
     @Singleton
     fun provideLibp2pConfig(): Libp2pConfig =
         Libp2pConfig(
             listenAddresses = listOf("/ip4/0.0.0.0/tcp/0"),
-            bootstrapPeers = emptyList(), // Populated via setBootstrapPeers() during onboarding
-            peerIdentityProto = null,     // Managed internally by Libp2pTransportImpl
+            bootstrapPeers = emptyList(),
+            peerIdentityProto = null,
             protocolPrefix = "/jlucraft/control/1.0.0",
         )
 
@@ -79,6 +68,5 @@ object AppModule {
         Libp2pClient(
             transport = transport,
             controlProtocolId = config.protocolPrefix,
-            eventProtocolId = "/jlucraft/events/1.0.0",
         )
 }

@@ -3,7 +3,7 @@ package com.jlucraft.console.viewmodel
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.model.Alert
-import com.jlucraft.console.data.repository.NodeRepository
+import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -21,7 +21,7 @@ class AlertsViewModelTest {
     val instantTaskRule = InstantTaskExecutorRule()
 
     private val testDispatcher = StandardTestDispatcher()
-    private lateinit var mockRepository: NodeRepository
+    private lateinit var mockClient: Libp2pClient
     private lateinit var mockAuthCoordinator: AuthCoordinator
 
     private val mockAlerts = listOf(
@@ -56,7 +56,7 @@ class AlertsViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        mockRepository = mockk()
+        mockClient = mockk()
         mockAuthCoordinator = mockk(relaxed = true)
         coEvery { mockAuthCoordinator.authenticateForOperation(any(), any(), any(), any()) } returns Result.success(Unit)
     }
@@ -67,13 +67,13 @@ class AlertsViewModelTest {
         unmockkAll()
     }
 
-    private fun createViewModel(): AlertsViewModel = AlertsViewModel(mockRepository, mockAuthCoordinator)
+    private fun createViewModel(): AlertsViewModel = AlertsViewModel(mockClient, mockAuthCoordinator)
 
-    // ── List alerts ──
+
 
     @Test
     fun `loads alerts on init`() = runTest {
-        coEvery { mockRepository.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
+        coEvery { mockClient.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
         val viewModel = createViewModel()
         advanceUntilIdle()
 
@@ -84,7 +84,7 @@ class AlertsViewModelTest {
 
     @Test
     fun `handles list alerts error`() = runTest {
-        coEvery { mockRepository.listAlerts(severity = null, includeResolved = false) } returns Result.failure(RuntimeException("fetch failed"))
+        coEvery { mockClient.listAlerts(severity = null, includeResolved = false) } returns Result.failure(RuntimeException("fetch failed"))
         val viewModel = createViewModel()
         advanceUntilIdle()
 
@@ -92,13 +92,13 @@ class AlertsViewModelTest {
         assertTrue(viewModel.uiState.value.alerts.isEmpty())
     }
 
-    // ── Acknowledge alert ──
+
 
     @Test
     fun `acknowledge alert succeeds and refreshes list`() = runTest {
-        coEvery { mockRepository.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
+        coEvery { mockClient.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
         val acknowledgedAlert = mockAlerts[0].copy(acknowledgedAt = "2024-01-01T00:05:00Z")
-        coEvery { mockRepository.acknowledgeAlert("alert-1") } returns Result.success(acknowledgedAlert)
+        coEvery { mockClient.acknowledgeAlert("alert-1") } returns Result.success(acknowledgedAlert)
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -108,14 +108,14 @@ class AlertsViewModelTest {
 
         assertEquals("alert_acknowledged", viewModel.uiState.value.actionSuccess)
         assertNull(viewModel.uiState.value.actionError)
-        coVerify(exactly = 1) { mockRepository.acknowledgeAlert("alert-1") }
-        coVerify(exactly = 2) { mockRepository.listAlerts(severity = null, includeResolved = false) }
+        coVerify(exactly = 1) { mockClient.acknowledgeAlert("alert-1") }
+        coVerify(exactly = 2) { mockClient.listAlerts(severity = null, includeResolved = false) }
     }
 
     @Test
     fun `acknowledge alert failure sets action error`() = runTest {
-        coEvery { mockRepository.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
-        coEvery { mockRepository.acknowledgeAlert("alert-1") } returns Result.failure(RuntimeException("ack failed"))
+        coEvery { mockClient.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
+        coEvery { mockClient.acknowledgeAlert("alert-1") } returns Result.failure(RuntimeException("ack failed"))
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -127,13 +127,13 @@ class AlertsViewModelTest {
         assertNull(viewModel.uiState.value.actionSuccess)
     }
 
-    // ── Resolve alert ──
+
 
     @Test
     fun `resolve alert succeeds and refreshes list`() = runTest {
-        coEvery { mockRepository.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
+        coEvery { mockClient.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
         val resolvedAlert = mockAlerts[0].copy(resolvedAt = "2024-01-01T00:05:00Z")
-        coEvery { mockRepository.resolveAlert("alert-1") } returns Result.success(resolvedAlert)
+        coEvery { mockClient.resolveAlert("alert-1") } returns Result.success(resolvedAlert)
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -143,14 +143,14 @@ class AlertsViewModelTest {
 
         assertEquals("alert_resolved", viewModel.uiState.value.actionSuccess)
         assertNull(viewModel.uiState.value.actionError)
-        coVerify(exactly = 1) { mockRepository.resolveAlert("alert-1") }
-        coVerify(exactly = 2) { mockRepository.listAlerts(severity = null, includeResolved = false) }
+        coVerify(exactly = 1) { mockClient.resolveAlert("alert-1") }
+        coVerify(exactly = 2) { mockClient.listAlerts(severity = null, includeResolved = false) }
     }
 
     @Test
     fun `resolve alert failure sets action error`() = runTest {
-        coEvery { mockRepository.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
-        coEvery { mockRepository.resolveAlert("alert-1") } returns Result.failure(RuntimeException("resolve failed"))
+        coEvery { mockClient.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
+        coEvery { mockClient.resolveAlert("alert-1") } returns Result.failure(RuntimeException("resolve failed"))
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -162,12 +162,12 @@ class AlertsViewModelTest {
         assertNull(viewModel.uiState.value.actionSuccess)
     }
 
-    // ── Filtering ──
+
 
     @Test
     fun `severity filter triggers refresh`() = runTest {
-        coEvery { mockRepository.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
-        coEvery { mockRepository.listAlerts(severity = "critical", includeResolved = false) } returns Result.success(listOf(mockAlerts[0]))
+        coEvery { mockClient.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
+        coEvery { mockClient.listAlerts(severity = "critical", includeResolved = false) } returns Result.success(listOf(mockAlerts[0]))
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -176,15 +176,15 @@ class AlertsViewModelTest {
         advanceUntilIdle()
 
         assertEquals("critical", viewModel.uiState.value.severityFilter)
-        coVerify(exactly = 1) { mockRepository.listAlerts(severity = "critical", includeResolved = false) }
+        coVerify(exactly = 1) { mockClient.listAlerts(severity = "critical", includeResolved = false) }
     }
 
-    // ── Clear action state ──
+
 
     @Test
     fun `clear action state resets action fields`() = runTest {
-        coEvery { mockRepository.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
-        coEvery { mockRepository.resolveAlert("alert-1") } returns Result.success(mockAlerts[0])
+        coEvery { mockClient.listAlerts(severity = null, includeResolved = false) } returns Result.success(mockAlerts)
+        coEvery { mockClient.resolveAlert("alert-1") } returns Result.success(mockAlerts[0])
 
         val viewModel = createViewModel()
         advanceUntilIdle()

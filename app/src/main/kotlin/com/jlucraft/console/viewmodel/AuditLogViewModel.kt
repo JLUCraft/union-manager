@@ -22,7 +22,7 @@ data class AuditLogUiState(
     val anomalies: List<AuditAnomaly> = emptyList(),
     val localAnomalies: List<LocalAnomaly> = emptyList(),
     val error: String? = null,
-    // ── filter state ──
+
     val cmdTypeFilter: String? = null,
     val timeRangeStart: Long? = null,
     val timeRangeEnd: Long? = null,
@@ -69,7 +69,7 @@ class AuditLogViewModel @Inject constructor(
         }
     }
 
-    // ── filter setters (state only – no network call) ──
+
 
     fun setCmdTypeFilter(cmdType: String?) {
         _uiState.value = _uiState.value.copy(cmdTypeFilter = cmdType)
@@ -98,7 +98,7 @@ class AuditLogViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(searchText = text)
     }
 
-    // ── filter execution (client-side only) ──
+
 
     fun applyFilters() {
         val state = _uiState.value
@@ -131,7 +131,7 @@ class AuditLogViewModel @Inject constructor(
         )
     }
 
-    // ── detail expansion ──
+
 
     fun selectEntry(entry: AuditEntry?) {
         _uiState.value = _uiState.value.copy(selectedEntry = entry)
@@ -141,7 +141,7 @@ class AuditLogViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(selectedEntry = null)
     }
 
-    // ── refresh ──
+
 
     fun refresh() {
         viewModelScope.launch {
@@ -181,7 +181,7 @@ class AuditLogViewModel @Inject constructor(
         }
     }
 
-    // ── private helpers ──
+
 
     private fun computeFilteredEntries(state: AuditLogUiState): List<AuditEntry> {
         var filtered = state.entries
@@ -226,7 +226,7 @@ class AuditLogViewModel @Inject constructor(
         return filtered
     }
 
-    // ── anomaly detection (unchanged) ──
+
 
     private fun detectLocalAnomalies(entries: List<AuditEntry>): List<LocalAnomaly> {
         if (entries.size < 2) return emptyList()

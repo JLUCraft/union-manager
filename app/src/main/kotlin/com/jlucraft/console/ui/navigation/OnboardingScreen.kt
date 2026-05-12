@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
@@ -22,12 +23,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Onboarding gate that blocks navigation until:
- *  1. TEE capability is detected
- *  2. Ed25519 key pair is generated (on IO dispatcher)
- *  3. Public key is confirmed/shown (QR placeholder)
- *  4. User acknowledges completion → marks onboarding_completed=true
- */
+private const val TAG = "OnboardingScreen"
+
+
 @Composable
 fun OnboardingScreen(
     teeAuth: TeeAuthManager,
@@ -74,7 +72,7 @@ fun OnboardingScreen(
         )
     }
 
-    // Generate QR bitmap from public key on background dispatcher
+
     LaunchedEffect(pubKey) {
         if (pubKey.isNullOrEmpty()) {
             qrError = "公钥为空，无法生成 QR 码"
@@ -100,6 +98,7 @@ fun OnboardingScreen(
                 }
                 bm
             } catch (e: Exception) {
+                Log.w(TAG, "QR code generation failed", e)
                 null
             }
         }
@@ -129,7 +128,7 @@ fun OnboardingScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // ── Step 1: TEE Detection ──
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -163,7 +162,7 @@ fun OnboardingScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Step 2: Key Generation ──
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -191,7 +190,7 @@ fun OnboardingScreen(
                         text = "设备公钥 (Base64):",
                         style = MaterialTheme.typography.labelMedium
                     )
-                    // QR code from real public key
+
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -203,7 +202,7 @@ fun OnboardingScreen(
                             modifier = Modifier.padding(12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            // QR bitmap (180×180 dp area)
+
                             Box(
                                 modifier = Modifier
                                     .size(180.dp)
@@ -259,7 +258,7 @@ fun OnboardingScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Step 3: Acknowledge ──
+
         if (generationDone) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -292,10 +291,10 @@ fun OnboardingScreen(
                     Button(
                         onClick = {
                             scope.launch {
-                                // Persist onboarding flag first (suspend), then notify caller
+
                                 settingsStore.setOnboardingCompleted(true)
                             }
-                            // onComplete is a pure UI callback; call it directly after launch
+
                             onComplete()
                         },
                         enabled = acknowledged,
@@ -309,11 +308,7 @@ fun OnboardingScreen(
     }
 }
 
-/**
- * Truncate a Base64 public key for display.
- * Ed25519 SubjectPublicKeyInfo DER in Base64 is typically ~44 chars;
- * we show the first 16 + "..." + last 12 for readability.
- */
+
 private fun truncateKey(key: String): String {
     if (key.length <= 36) return key
     return key.take(16) + "..." + key.takeLast(12)

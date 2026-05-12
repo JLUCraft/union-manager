@@ -3,23 +3,19 @@ package com.jlucraft.console.viewmodel
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.jlucraft.console.data.auth.AuthCoordinator
 import com.jlucraft.console.data.auth.TeeAuthManager
-import com.jlucraft.console.data.model.GovernanceEvent
-import com.jlucraft.console.data.model.GovernanceEventType
 import com.jlucraft.console.data.model.MemberSummary
 import com.jlucraft.console.data.model.Proposal
 import com.jlucraft.console.data.model.ProposalSignature
-import com.jlucraft.console.data.remote.ApiService
+import com.jlucraft.console.data.model.GenericPushEventData
+import com.jlucraft.console.data.model.AddNodeProposalPayload
 import com.jlucraft.console.data.remote.PushService
-import com.jlucraft.console.data.repository.NodeRepository
+import com.jlucraft.console.data.remote.libp2p.EventEnvelope
+import com.jlucraft.console.data.remote.libp2p.Libp2pClient
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.*
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -33,20 +29,19 @@ class GovernanceViewModelTest {
     val instantTaskRule = InstantTaskExecutorRule()
 
     private val testDispatcher = StandardTestDispatcher()
-    private lateinit var apiService: ApiService
+    private lateinit var client: Libp2pClient
     private lateinit var teeAuth: TeeAuthManager
     private lateinit var authCoordinator: AuthCoordinator
-    private lateinit var pushEvents: MutableSharedFlow<PushService.WebSocketEvent>
+    private lateinit var pushEvents: MutableSharedFlow<PushService.PushEvent>
     private lateinit var pushService: PushService
-    private lateinit var nodeRepository: NodeRepository
     private lateinit var viewModel: GovernanceViewModel
-    private lateinit var governanceEvents: MutableSharedFlow<GovernanceEvent>
+    private lateinit var governanceEvents: MutableSharedFlow<EventEnvelope>
 
     private val mockProposals = listOf(
         Proposal(
             id = "proposal-1",
             proposalType = "config",
-            payload = buildJsonObject { put("key", JsonPrimitive("value")) },
+            payload = AddNodeProposalPayload(description = "node-1", target = "pk-1"),
             proposer = "pk-1",
             expiresAt = "2024-12-31T00:00:00Z",
             signatures = emptyList(),
@@ -56,7 +51,7 @@ class GovernanceViewModelTest {
         Proposal(
             id = "proposal-2",
             proposalType = "membership",
-            payload = buildJsonObject { put("member", JsonPrimitive("pk-2")) },
+            payload = AddNodeProposalPayload(description = "node-2", target = "pk-2"),
             proposer = "pk-1",
             expiresAt = "2024-12-31T00:00:00Z",
             signatures = listOf(ProposalSignature(pubkey = "pk-3", signature = "sig1", signedAt = "2024-01-02T00:00:00Z")),
@@ -66,7 +61,7 @@ class GovernanceViewModelTest {
         Proposal(
             id = "proposal-3",
             proposalType = "config",
-            payload = buildJsonObject { put("key", JsonPrimitive("value2")) },
+            payload = AddNodeProposalPayload(description = "node-3", target = "pk-3"),
             proposer = "pk-2",
             expiresAt = "2024-12-31T00:00:00Z",
             signatures = emptyList(),
@@ -86,17 +81,17 @@ class GovernanceViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        apiService = mockk()
+        client = mockk()
         teeAuth = mockk()
         authCoordinator = mockk()
-        nodeRepository = mockk(relaxed = true)
         governanceEvents = MutableSharedFlow(replay = 0, extraBufferCapacity = 8)
 
         pushEvents = MutableSharedFlow(replay = 0, extraBufferCapacity = 64)
         pushService = mockk()
         every { pushService.events } returns pushEvents
-        every { nodeRepository.observeGovernanceEvents() } returns governanceEvents
-        coEvery { nodeRepository.listMembers() } returns Result.success(mockMembers)
+        coEvery { client.subscribeGovernanceEvents() } returns governanceEvents
+        coEvery { client.listMembers() } returns Result.success(mockMembers)
+        every { authCoordinator.clearAuth() } just Runs
     }
 
     @After
@@ -106,33 +101,30 @@ class GovernanceViewModelTest {
     }
 
     private fun mockListProposals(proposals: List<Proposal> = mockProposals) {
-        coEvery { apiService.listProposals() } returns Result.success(proposals)
+        coEvery { client.listProposals() } returns Result.success(proposals)
     }
 
     private fun createViewModel() {
-        viewModel = GovernanceViewModel(apiService, teeAuth, authCoordinator, nodeRepository, pushService)
+        viewModel = GovernanceViewModel(client, teeAuth, authCoordinator, pushService)
     }
 
-    private fun makeEvent(type: String) = PushService.WebSocketEvent(
+    private fun makePushEvent(type: String) = PushService.PushEvent(
         type = type,
-        data = JsonObject(emptyMap())
+        data = GenericPushEventData(raw = "")
     )
 
     private fun makeGovernanceEvent(
-        type: GovernanceEventType,
-        proposalId: String? = "proposal-1"
-    ) = GovernanceEvent(
-        eventId = "event-${type.name}",
-        eventType = type,
-        occurredAt = "2026-05-05T00:00:00Z",
-        proposalId = proposalId,
-        actorDid = "did:actor:1",
-        payload = buildJsonObject { put("status", JsonPrimitive("updated")) }
+        eventType: String,
+    ) = EventEnvelope(
+        topic = "governance",
+        eventType = eventType,
+        timestamp = "2026-05-05T00:00:00Z",
+        payload = ByteArray(0)
     )
 
-    // ---------------------------------------------------------------
-    // 1. Initial state loads proposals
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun initial_state_loads_proposals() {
@@ -144,12 +136,12 @@ class GovernanceViewModelTest {
         assertFalse(viewModel.uiState.value.isLoading)
         assertNull(viewModel.uiState.value.error)
 
-        coVerify(exactly = 1) { apiService.listProposals() }
+        coVerify(exactly = 1) { client.listProposals() }
     }
 
-    // ---------------------------------------------------------------
-    // 2. Push event "proposal_created" triggers refresh
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun push_event_proposal_created_triggers_refresh() {
@@ -157,15 +149,15 @@ class GovernanceViewModelTest {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        pushEvents.tryEmit(makeEvent("proposal_created"))
+        pushEvents.tryEmit(makePushEvent("proposal_created"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { apiService.listProposals() }
+        coVerify(exactly = 2) { client.listProposals() }
     }
 
-    // ---------------------------------------------------------------
-    // 3. Push event "proposal_signed" triggers refresh
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun push_event_proposal_signed_triggers_refresh() {
@@ -173,15 +165,15 @@ class GovernanceViewModelTest {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        pushEvents.tryEmit(makeEvent("proposal_signed"))
+        pushEvents.tryEmit(makePushEvent("proposal_signed"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { apiService.listProposals() }
+        coVerify(exactly = 2) { client.listProposals() }
     }
 
-    // ---------------------------------------------------------------
-    // 4. Push event "proposal_executed" triggers refresh
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun push_event_proposal_executed_triggers_refresh() {
@@ -189,15 +181,15 @@ class GovernanceViewModelTest {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        pushEvents.tryEmit(makeEvent("proposal_executed"))
+        pushEvents.tryEmit(makePushEvent("proposal_executed"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { apiService.listProposals() }
+        coVerify(exactly = 2) { client.listProposals() }
     }
 
-    // ---------------------------------------------------------------
-    // 5. Push event "proposal_rejected" triggers refresh
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun push_event_proposal_rejected_triggers_refresh() {
@@ -205,15 +197,15 @@ class GovernanceViewModelTest {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        pushEvents.tryEmit(makeEvent("proposal_rejected"))
+        pushEvents.tryEmit(makePushEvent("proposal_rejected"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 2) { apiService.listProposals() }
+        coVerify(exactly = 2) { client.listProposals() }
     }
 
-    // ---------------------------------------------------------------
-    // 6. Non-matching push event does not refresh
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun non_matching_push_event_does_not_refresh() {
@@ -221,15 +213,15 @@ class GovernanceViewModelTest {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        pushEvents.tryEmit(makeEvent("unrelated_event"))
+        pushEvents.tryEmit(makePushEvent("unrelated_event"))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify(exactly = 1) { apiService.listProposals() }
+        coVerify(exactly = 1) { client.listProposals() }
     }
 
-    // ---------------------------------------------------------------
-    // 7. StatusFilter filters proposals correctly
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun statusFilter_filters_proposals_correctly() {
@@ -239,7 +231,7 @@ class GovernanceViewModelTest {
 
         assertEquals(3, viewModel.uiState.value.proposals.size)
 
-        coEvery { apiService.listProposals() } returns Result.success(mockProposals)
+        coEvery { client.listProposals() } returns Result.success(mockProposals)
         viewModel.setStatusFilter("active")
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -248,9 +240,9 @@ class GovernanceViewModelTest {
         assertEquals("proposal-1", viewModel.uiState.value.proposals.first().id)
     }
 
-    // ---------------------------------------------------------------
-    // 8. ShowCreateDialog opens dialog
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun showCreateDialog_opens_dialog() {
@@ -265,9 +257,9 @@ class GovernanceViewModelTest {
         assertNull(viewModel.uiState.value.createError)
     }
 
-    // ---------------------------------------------------------------
-    // 9. DismissCreateDialog closes dialog
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun dismissCreateDialog_closes_dialog() {
@@ -283,9 +275,9 @@ class GovernanceViewModelTest {
         assertNull(viewModel.uiState.value.createError)
     }
 
-    // ---------------------------------------------------------------
-    // 10. ShowProposalDetail selects proposal
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun showProposalDetail_selects_proposal() {
@@ -300,9 +292,9 @@ class GovernanceViewModelTest {
         assertNull(viewModel.uiState.value.signError)
     }
 
-    // ---------------------------------------------------------------
-    // 11. DismissProposalDetail clears selection
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun dismissProposalDetail_clears_selection() {
@@ -318,13 +310,13 @@ class GovernanceViewModelTest {
         assertNull(viewModel.uiState.value.signError)
     }
 
-    // ---------------------------------------------------------------
-    // 12. Error state is handled
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun error_state_is_handled() {
-        coEvery { apiService.listProposals() } returns Result.failure(Exception("Network error"))
+        coEvery { client.listProposals() } returns Result.failure(Exception("Network error"))
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -334,9 +326,9 @@ class GovernanceViewModelTest {
         assertTrue(viewModel.uiState.value.proposals.isEmpty())
     }
 
-    // ---------------------------------------------------------------
-    // 13. Loading state is set correctly
-    // ---------------------------------------------------------------
+
+
+
 
     @Test
     fun loading_state_is_set_correctly() {
@@ -349,7 +341,7 @@ class GovernanceViewModelTest {
 
     @Test
     fun loading_state_is_false_after_error() {
-        coEvery { apiService.listProposals() } returns Result.failure(Exception("fail"))
+        coEvery { client.listProposals() } returns Result.failure(Exception("fail"))
 
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -364,13 +356,12 @@ class GovernanceViewModelTest {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        governanceEvents.tryEmit(makeGovernanceEvent(GovernanceEventType.PROPOSAL_CREATED))
+        governanceEvents.tryEmit(makeGovernanceEvent("proposal_created"))
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(StreamStatus.CONNECTED, viewModel.uiState.value.streamStatus)
         assertEquals("2026-05-05T00:00:00Z", viewModel.uiState.value.lastEventTime)
-        assertEquals(GovernanceEventType.PROPOSAL_CREATED, viewModel.uiState.value.lastEvent?.eventType)
-        coVerify(exactly = 2) { apiService.listProposals() }
+        coVerify(exactly = 2) { client.listProposals() }
     }
 
     @Test
@@ -380,11 +371,11 @@ class GovernanceViewModelTest {
         viewModel.setActiveTab("members")
         testDispatcher.scheduler.advanceUntilIdle()
 
-        governanceEvents.tryEmit(makeGovernanceEvent(GovernanceEventType.MEMBER_UPDATED, proposalId = null))
+        governanceEvents.tryEmit(makeGovernanceEvent("member_updated"))
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(StreamStatus.CONNECTED, viewModel.uiState.value.streamStatus)
         assertEquals(mockMembers, viewModel.uiState.value.members)
-        coVerify(atLeast = 2) { nodeRepository.listMembers() }
+        coVerify(atLeast = 2) { client.listMembers() }
     }
 }

@@ -9,11 +9,8 @@ import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 
-/**
- * Typed payload for [GovernanceEvent] payloads delivered via libp2p event stream.
+
  *
- * [GovernanceEventPayloadSerializer] handles transparent conversion during deserialization.
- */
 @Serializable(with = GovernanceEventPayloadSerializer::class)
 sealed interface GovernanceEventPayload
 
@@ -30,7 +27,7 @@ internal object GovernanceEventPayloadSerializer : KSerializer<GovernanceEventPa
         when (value) {
             is GovernanceEventData -> encoder.encodeSerializableValue(
                 JsonObject.serializer(),
-                buildJsonObject { /* minimal */ }
+                buildJsonObject {  }
             )
         }
     }

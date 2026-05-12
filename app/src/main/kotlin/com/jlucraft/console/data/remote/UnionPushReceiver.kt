@@ -1,6 +1,7 @@
 package com.jlucraft.console.data.remote
 
 import android.content.Context
+import android.util.Log
 import com.jlucraft.console.data.model.AuthChallengeEventData
 import com.jlucraft.console.data.model.AlertFiredEventData
 import com.jlucraft.console.data.model.AlertResolvedEventData
@@ -12,7 +13,8 @@ import com.jlucraft.console.data.model.ProposalEventData
 import com.jlucraft.console.data.model.PushEventPayload
 import com.jlucraft.console.data.push.PushNotificationFormatter
 import com.jlucraft.console.data.push.PushNotificationPolicy
-import com.jlucraft.events.v1.PushEventEnvelope
+import com.jlucraft.events.v1.EventEnvelope
+import com.jlucraft.events.v1.PushNotification
 import kotlinx.coroutines.flow.MutableSharedFlow
 import org.unifiedpush.android.connector.FailedReason
 import org.unifiedpush.android.connector.MessagingReceiver
@@ -58,95 +60,102 @@ public open class UnionPushReceiver : MessagingReceiver() {
     }
 
     companion object {
-        /**
-         * Event types that should produce notifications.
-         * Kept for backward-compatibility; delegates to [PushNotificationFormatter.NOTIFICATION_EVENTS].
-         */
+        private const val TAG = "UnionPushReceiver"
+
+
         private val notificationEvents = PushNotificationFormatter.NOTIFICATION_EVENTS
 
-        /**
-         * Alert event types.
-         * Kept for backward-compatibility; delegates to [PushNotificationFormatter.ALERT_EVENTS].
-         */
+
         private val alertEvents = PushNotificationFormatter.ALERT_EVENTS
 
         private fun parseMessage(message: PushMessage): Pair<String, PushEventPayload> {
             try {
-                val envelope = PushEventEnvelope.parseFrom(message.content)
-                val type = when (envelope.eventType) {
+                val notification = PushNotification.parseFrom(message.content)
+                val type = when (notification.eventType) {
                     "AuthChallenge", "auth_challenge" -> "AuthChallenge"
                     "InstanceCrash", "instance_crash" -> "instance_crash"
+                    else -> notification.eventType
+                }
+                if (type.isBlank()) throw IllegalArgumentException("empty push event type")
+                val payload = GenericPushEventData(raw = notification.summary.ifEmpty { notification.body })
+                return type to payload
+            } catch (_: Exception) {
+                Log.w(TAG, "PushNotification parse failed, falling back to EventEnvelope")
+            }
+
+            try {
+                val envelope = EventEnvelope.parseFrom(message.content)
+                val type = when (envelope.eventType) {
+                    "auth_challenge" -> "AuthChallenge"
                     else -> envelope.eventType
                 }
+                if (type.isBlank()) throw IllegalArgumentException("empty envelope event type")
                 val payload = mapProtoPayload(envelope)
                 return type to payload
             } catch (_: Exception) {
+                Log.w(TAG, "EventEnvelope parse also failed, returning unknown event")
                 return "unknown" to GenericPushEventData(raw = "<proto: parse error>")
             }
         }
 
-        private fun mapProtoPayload(envelope: PushEventEnvelope): PushEventPayload {
+        private fun mapProtoPayload(envelope: EventEnvelope): PushEventPayload {
             return when (envelope.payloadCase) {
-                PushEventEnvelope.PayloadCase.INSTANCE_CRASH -> {
-                    val p = envelope.instanceCrash
+                EventEnvelope.PayloadCase.INSTANCE_UPDATE -> {
+                    val p = envelope.instanceUpdate
                     InstanceCrashEventData(
                         instanceId = p.instanceId.nullIfEmpty(),
-                        instanceName = p.instanceName.nullIfEmpty(),
-                        peerId = p.peerId.nullIfEmpty(),
-                        crashedAt = p.crashedAt.nullIfEmpty()
+                        instanceName = p.name.nullIfEmpty(),
+                        peerId = p.hostPeerId.nullIfEmpty(),
+                        crashedAt = envelope.occurredAt.nullIfEmpty()
                     )
                 }
-                PushEventEnvelope.PayloadCase.NODE_OFFLINE -> {
-                    val p = envelope.nodeOffline
+                EventEnvelope.PayloadCase.NODE_READY -> {
+                    val p = envelope.nodeReady
                     NodeOfflineEventData(
                         peerId = p.peerId.nullIfEmpty(),
-                        lastSeen = p.lastSeen.nullIfEmpty(),
-                        offlineSince = p.offlineSince.nullIfEmpty()
+                        lastSeen = p.startedAt.nullIfEmpty(),
+                        offlineSince = envelope.occurredAt.nullIfEmpty()
                     )
                 }
-                PushEventEnvelope.PayloadCase.ALERT_FIRED -> {
-                    val p = envelope.alertFired
+                EventEnvelope.PayloadCase.ALERT -> {
+                    val p = envelope.alert
                     AlertFiredEventData(
                         alertId = p.alertId.nullIfEmpty(),
-                        alertName = p.alertName.nullIfEmpty(),
-                        description = p.description.nullIfEmpty(),
-                        firedAt = p.firedAt.nullIfEmpty()
+                        alertName = p.alertType.nullIfEmpty(),
+                        description = p.message.nullIfEmpty(),
+                        firedAt = envelope.occurredAt.nullIfEmpty()
                     )
                 }
-                PushEventEnvelope.PayloadCase.ALERT_RESOLVED -> {
-                    val p = envelope.alertResolved
-                    AlertResolvedEventData(
-                        alertId = p.alertId.nullIfEmpty(),
-                        alertName = p.alertName.nullIfEmpty(),
-                        resolvedAt = p.resolvedAt.nullIfEmpty()
-                    )
-                }
-                PushEventEnvelope.PayloadCase.PROPOSAL -> {
+                EventEnvelope.PayloadCase.PROPOSAL -> {
                     val p = envelope.proposal
                     ProposalEventData(
                         proposalId = p.proposalId.nullIfEmpty(),
-                        title = p.title.nullIfEmpty(),
-                        humanSummary = p.humanSummary.nullIfEmpty(),
-                        actor = p.actor.nullIfEmpty(),
-                        actorPubkey = p.actorPubkey.nullIfEmpty()
+                        title = p.proposalType.nullIfEmpty(),
+                        humanSummary = p.status.nullIfEmpty(),
+                        actor = p.proposer.nullIfEmpty(),
+                        actorPubkey = null
                     )
                 }
-                PushEventEnvelope.PayloadCase.AUTH_CHALLENGE -> {
+                EventEnvelope.PayloadCase.AUTH_CHALLENGE -> {
                     val p = envelope.authChallenge
                     AuthChallengeEventData(
                         humanSummary = p.humanSummary.nullIfEmpty(),
-                        actor = p.actor.nullIfEmpty(),
-                        actorPubkey = p.actorPubkey.nullIfEmpty(),
+                        actor = envelope.sourcePeerId.nullIfEmpty(),
+                        actorPubkey = null,
                         cmdType = p.cmdType.nullIfEmpty()
                     )
                 }
-                PushEventEnvelope.PayloadCase.MATCH -> {
+                EventEnvelope.PayloadCase.MATCH -> {
                     val p = envelope.match
                     MatchEventData(
                         matchId = p.matchId.nullIfEmpty(),
-                        opponentName = p.opponentName.nullIfEmpty()
+                        opponentName = p.status.nullIfEmpty()
                     )
                 }
+                EventEnvelope.PayloadCase.GENERIC -> GenericPushEventData(
+                    raw = envelope.generic.attributesMap.entries.joinToString(", ") { "${it.key}=${it.value}" }
+                        .ifEmpty { envelope.generic.eventType }
+                )
                 else -> GenericPushEventData(raw = "<proto: no payload>")
             }
         }
@@ -192,6 +201,7 @@ public open class UnionPushReceiver : MessagingReceiver() {
                         else -> "External Distributor"
                     }
                 } catch (_: Exception) {
+                    Log.w(TAG, "Failed to resolve distributor name for $endpointUrl")
                     "External Distributor"
                 }
             }

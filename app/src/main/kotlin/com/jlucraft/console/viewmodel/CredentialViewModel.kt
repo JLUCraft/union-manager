@@ -6,13 +6,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import com.jlucraft.console.data.auth.ReadOnlyDeviceException
-import com.jlucraft.console.data.auth.TeeAuthManager
+import com.jlucraft.console.data.auth.AuthCoordinator
+import com.jlucraft.console.data.auth.withAuthenticatedOperation
 import com.jlucraft.console.data.model.CredentialActionRequest
 import com.jlucraft.console.data.model.CredentialSubject
+import com.jlucraft.console.data.model.GrantRoleAuthPayload
 import com.jlucraft.console.data.model.GrantRoleRequest
+import com.jlucraft.console.data.model.IssueCredentialAuthPayload
 import com.jlucraft.console.data.model.IssueCredentialResponse
 import com.jlucraft.console.data.model.MemberSummary
+import com.jlucraft.console.data.model.RevokeCredentialAuthPayload
 import com.jlucraft.console.data.model.VcVerificationResult
 import com.jlucraft.console.data.model.VcVerifyRequest
 import com.jlucraft.console.data.model.VerifiableCredential
@@ -36,14 +39,13 @@ data class CredentialUiState(
     val operationSuccess: String? = null
 )
 
-/**
- * ViewModel dedicated to VC (Verifiable Credential) lifecycle operations
- * via protobuf over libp2p.
- */
+
+ *
+ *
 @HiltViewModel
 class CredentialViewModel @Inject constructor(
     private val client: Libp2pClient,
-    private val teeAuth: TeeAuthManager,
+    private val authCoordinator: AuthCoordinator,
 ) : ViewModel() {
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true; isLenient = true }
@@ -71,12 +73,6 @@ class CredentialViewModel @Inject constructor(
     }
 
     fun issueCredential(subjectDid: String, reason: String? = null) {
-        if (!teeAuth.isTeeBacked) {
-            _uiState.value = _uiState.value.copy(
-                operationError = ReadOnlyDeviceException.fromCapability(teeAuth.capability).message
-            )
-            return
-        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 operationLoading = true,
@@ -85,16 +81,33 @@ class CredentialViewModel @Inject constructor(
                 issuedVcJson = null,
                 issuedVc = null
             )
-            val request = CredentialActionRequest(subjectDid, reason)
-            client.issueCredential(request)
-                .onSuccess { response ->
+            val result = authCoordinator.withAuthenticatedOperation(
+                cmdType = "issue-credential",
+                payload = IssueCredentialAuthPayload(subjectDid),
+                title = "签发凭证",
+                subtitle = "请验证身份以签发凭证",
+                operation = {
+                    val request = CredentialActionRequest(subjectDid, reason)
+                    client.issueCredential(request)
+                }
+            )
+            if (result.isFailure) {
+                _uiState.value = _uiState.value.copy(
+                    operationLoading = false,
+                    operationError = result.exceptionOrNull()?.message ?: "签发凭证失败"
+                )
+                return@launch
+            }
+            val response = result.getOrThrow()
+            response
+                .onSuccess { resp ->
                     val displayVc = VerifiableCredential(
                         id = "vc:${subjectDid}:${System.currentTimeMillis()}",
                         issuer = "union-manager",
                         issuanceDate = Instant.now().toString(),
                         credentialSubject = CredentialSubject(
                             id = subjectDid,
-                            role = response.credentialType,
+                            role = resp.credentialType,
                             displayName = subjectDid,
                             clubCode = null
                         )
@@ -121,20 +134,31 @@ class CredentialViewModel @Inject constructor(
     }
 
     fun revokeCredential(subjectDid: String, reason: String) {
-        if (!teeAuth.isTeeBacked) {
-            _uiState.value = _uiState.value.copy(
-                operationError = ReadOnlyDeviceException.fromCapability(teeAuth.capability).message
-            )
-            return
-        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 operationLoading = true,
                 operationError = null,
                 operationSuccess = null
             )
-            val request = CredentialActionRequest(subjectDid, reason)
-            client.revokeCredential(request)
+            val result = authCoordinator.withAuthenticatedOperation(
+                cmdType = "revoke-credential",
+                payload = RevokeCredentialAuthPayload(subjectDid, reason),
+                title = "吊销凭证",
+                subtitle = "请验证身份以吊销凭证",
+                operation = {
+                    val request = CredentialActionRequest(subjectDid, reason)
+                    client.revokeCredential(request)
+                }
+            )
+            if (result.isFailure) {
+                _uiState.value = _uiState.value.copy(
+                    operationLoading = false,
+                    operationError = result.exceptionOrNull()?.message ?: "吊销凭证失败"
+                )
+                return@launch
+            }
+            val inner = result.getOrThrow()
+            inner
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         operationLoading = false,
@@ -152,20 +176,31 @@ class CredentialViewModel @Inject constructor(
     }
 
     fun grantRole(subjectDid: String, role: String) {
-        if (!teeAuth.isTeeBacked) {
-            _uiState.value = _uiState.value.copy(
-                operationError = ReadOnlyDeviceException.fromCapability(teeAuth.capability).message
-            )
-            return
-        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 operationLoading = true,
                 operationError = null,
                 operationSuccess = null
             )
-            val request = GrantRoleRequest(subjectDid, role)
-            client.grantRole(request)
+            val result = authCoordinator.withAuthenticatedOperation(
+                cmdType = "grant-role",
+                payload = GrantRoleAuthPayload(subjectDid, role),
+                title = "授予角色",
+                subtitle = "请验证身份以授予 $role 角色",
+                operation = {
+                    val request = GrantRoleRequest(subjectDid, role)
+                    client.grantRole(request)
+                }
+            )
+            if (result.isFailure) {
+                _uiState.value = _uiState.value.copy(
+                    operationLoading = false,
+                    operationError = result.exceptionOrNull()?.message ?: "授予角色失败"
+                )
+                return@launch
+            }
+            val inner = result.getOrThrow()
+            inner
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         operationLoading = false,

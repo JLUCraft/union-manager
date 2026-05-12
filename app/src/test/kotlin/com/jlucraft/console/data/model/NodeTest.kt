@@ -61,14 +61,14 @@ class NodeTest {
         assertEquals("a1b2c3d4-e5f6-7890-abcd-ef1234567890", instance.id)
         assertEquals("test-instance", instance.name)
 
-        // Verify admission is a strongly-typed AdmissionPolicy
+
         val admission = instance.admission!!
         assertEquals("public", admission.mode)
         assertTrue(admission.allowed_clubs.isEmpty())
         assertTrue(admission.allowed_players.isEmpty())
         assertTrue(!admission.requires_verified_email)
 
-        // Verify runtime is a strongly-typed InstanceRuntimeSpec
+
         val runtime = instance.runtime!!
         assertEquals("itzg/minecraft-server:latest", runtime.image)
         assertEquals(listOf("java"), runtime.command)
@@ -76,7 +76,7 @@ class NodeTest {
         assertEquals("/data", runtime.dataMountPath)
         assertEquals("logs/latest.log", runtime.logPath)
 
-        // Verify resources is a strongly-typed ResourceRequest
+
         val resources = instance.resources!!
         assertEquals(2, resources.cpuCores)
         assertEquals(4, resources.memoryGb)
@@ -137,7 +137,7 @@ class NodeTest {
         val instance = json.decodeFromString<Instance>(input)
         assertEquals("migrating", instance.status)
 
-        // Verify migration_progress is a strongly-typed MigrationProgress
+
         val progress = instance.migrationProgress!!
         assertEquals("s3-sync", progress.phase)
         assertEquals("2026-05-06T09:10:00Z", progress.startedAt)
@@ -147,7 +147,7 @@ class NodeTest {
         assertNull(progress.error)
         assertEquals("active", progress.trigger)
 
-        // Verify admission strongly typed
+
         val admission = instance.admission!!
         assertEquals("club-only", admission.mode)
         assertEquals(listOf("JLU"), admission.allowed_clubs)

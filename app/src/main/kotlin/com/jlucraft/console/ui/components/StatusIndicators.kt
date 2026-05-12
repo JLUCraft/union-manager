@@ -13,7 +13,7 @@ import com.jlucraft.console.data.model.TournamentStatus
 import com.jlucraft.console.ui.theme.StatusBlue
 import com.jlucraft.console.ui.theme.StatusGreen
 
-// ── Instance status display helpers ──
+
 
 @Composable
 fun Instance.statusColor(): Color = when (status.lowercase()) {
@@ -39,7 +39,7 @@ fun Instance.statusText(): String = when (status.lowercase()) {
     else -> status
 }
 
-// ── Tournament status display helpers ──
+
 
 @Composable
 fun Tournament.statusColor(): Color = when (status) {
@@ -51,7 +51,7 @@ fun Tournament.statusColor(): Color = when (status) {
     TournamentStatus.Cancelled -> MaterialTheme.colorScheme.outline
 }
 
-// ── Proposal status display helpers ──
+
 
 @Composable
 fun Proposal.statusColor(): Color = when (status) {
@@ -62,7 +62,7 @@ fun Proposal.statusColor(): Color = when (status) {
     else -> MaterialTheme.colorScheme.outline
 }
 
-// ── Audit outcome display helper ──
+
 
 @Composable
 fun AuditEntry.outcomeColor(): Color = when (outcome) {

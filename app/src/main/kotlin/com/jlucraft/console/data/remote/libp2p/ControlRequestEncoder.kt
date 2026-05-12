@@ -77,13 +77,8 @@ import com.google.protobuf.ByteString
 import com.jlucraft.console.data.remote.AuthRequest
 import com.jlucraft.console.data.remote.SignResponse
 
-/**
- * Encodes Kotlin [ControlRequest] sealed-class variants into serialised
- * `com.jlucraft.control.v1.ControlRequest` protobuf bytes.
+
  *
- * The output bytes are raw protobuf binary (no length prefix). The varint
- * framing is applied by [FramedStreamController.writeFrame].
- */
 internal object ControlRequestEncoder {
 
     fun encode(request: ControlRequest, authContext: AuthContext?): ByteArray {
@@ -91,7 +86,7 @@ internal object ControlRequestEncoder {
         return proto.toByteArray()
     }
 
-    // ── Builder ──────────────────────────────────────────────────────────
+
 
     private fun buildProtoRequest(
         request: ControlRequest,
@@ -103,14 +98,14 @@ internal object ControlRequestEncoder {
         ctx?.let { builder.setAuth(buildAuth(it)) }
 
         when (request) {
-            // ── Cluster / network ──────────────────────────────────────
+
             is ControlRequest.GetClusterHealth ->
                 builder.setGetClusterHealth(GetClusterHealthRequest.getDefaultInstance())
 
             is ControlRequest.GetNetwork ->
                 builder.setGetNetwork(GetNetworkRequest.getDefaultInstance())
 
-            // ── Instances ─────────────────────────────────────────────
+
             is ControlRequest.ListInstances ->
                 builder.setListInstances(ListInstancesRequest.getDefaultInstance())
 
@@ -179,15 +174,7 @@ internal object ControlRequestEncoder {
                         .build()
                 )
 
-            is ControlRequest.StreamInstanceLogs ->
-                builder.setStreamInstanceLogs(
-                    com.jlucraft.control.v1.StreamInstanceLogsRequest.newBuilder()
-                        .setInstanceId(request.instanceId)
-                        .setFollow(request.follow)
-                        .build()
-                )
 
-            // ── Scheduling ────────────────────────────────────────────
             is ControlRequest.GetSchedulingConstraints ->
                 builder.setGetInstanceScheduling(
                     GetInstanceSchedulingRequest.newBuilder()
@@ -211,7 +198,7 @@ internal object ControlRequestEncoder {
                         .build()
                 )
 
-            // ── Auth ──────────────────────────────────────────────────
+
             is ControlRequest.RequestChallenge ->
                 builder.setCreateAuthChallenge(
                     CreateAuthChallengeRequest.newBuilder()
@@ -230,7 +217,7 @@ internal object ControlRequestEncoder {
                         .build()
                 )
 
-            // ── Commands ──────────────────────────────────────────────
+
             is ControlRequest.CreateCommand ->
                 builder.setCreateCommand(
                     com.jlucraft.control.v1.CreateCommandRequest.newBuilder()
@@ -254,7 +241,7 @@ internal object ControlRequestEncoder {
                         .build()
                 )
 
-            // ── Proposals ─────────────────────────────────────────────
+
             is ControlRequest.ListProposals ->
                 builder.setListProposals(ListProposalsRequest.getDefaultInstance())
 
@@ -301,7 +288,7 @@ internal object ControlRequestEncoder {
                     ExecuteProposalRequest.newBuilder().setProposalId(request.proposalId).build()
                 )
 
-            // ── Audit ─────────────────────────────────────────────────
+
             is ControlRequest.ListAuditEntries ->
                 builder.setListAuditEntries(
                     ListAuditEntriesRequest.newBuilder()
@@ -315,7 +302,7 @@ internal object ControlRequestEncoder {
             is ControlRequest.ListAuditAnomalies ->
                 builder.setListAuditAnomalies(ListAuditAnomaliesRequest.getDefaultInstance())
 
-            // ── Alerts ────────────────────────────────────────────────
+
             is ControlRequest.ListAlerts ->
                 builder.setListAlerts(
                     ListAlertsRequest.newBuilder()
@@ -334,7 +321,7 @@ internal object ControlRequestEncoder {
                     ResolveAlertRequest.newBuilder().setAlertId(request.alertId).build()
                 )
 
-            // ── Tournaments ───────────────────────────────────────────
+
             is ControlRequest.ListTournaments ->
                 builder.setListTournaments(ListTournamentsRequest.getDefaultInstance())
 
@@ -372,7 +359,39 @@ internal object ControlRequestEncoder {
             is ControlRequest.ListTeams ->
                 builder.setListTeams(ListTeamsRequest.getDefaultInstance())
 
-            // ── Disputes ──────────────────────────────────────────────
+            is ControlRequest.PauseMatch ->
+                builder.setManageTournament(
+                    ManageTournamentRequest.newBuilder()
+                        .setTournamentId(request.matchId)
+                        .setAction("pause-match")
+                        .build()
+                )
+
+            is ControlRequest.ResumeMatch ->
+                builder.setManageTournament(
+                    ManageTournamentRequest.newBuilder()
+                        .setTournamentId(request.matchId)
+                        .setAction("resume-match")
+                        .build()
+                )
+
+            is ControlRequest.ResetMatch ->
+                builder.setManageTournament(
+                    ManageTournamentRequest.newBuilder()
+                        .setTournamentId(request.matchId)
+                        .setAction("reset-match")
+                        .build()
+                )
+
+            is ControlRequest.JudgeMatch ->
+                builder.setManageTournament(
+                    ManageTournamentRequest.newBuilder()
+                        .setTournamentId(request.matchId)
+                        .setAction("judge-match:${request.winnerId}:${request.reason}")
+                        .build()
+                )
+
+
             is ControlRequest.ListDisputes ->
                 builder.setListDisputes(
                     ListDisputesRequest.newBuilder()
@@ -394,7 +413,7 @@ internal object ControlRequestEncoder {
                         .build()
                 )
 
-            // ── Seasons ───────────────────────────────────────────────
+
             is ControlRequest.ListSeasons ->
                 builder.setListSeasons(ListSeasonsRequest.getDefaultInstance())
 
@@ -425,7 +444,7 @@ internal object ControlRequestEncoder {
                         .build()
                 )
 
-            // ── Devices ───────────────────────────────────────────────
+
             is ControlRequest.ListDevices ->
                 builder.setListDevices(ListDevicesRequest.getDefaultInstance())
 
@@ -445,7 +464,7 @@ internal object ControlRequestEncoder {
                         .build()
                 )
 
-            // ── Members / VC / DID ────────────────────────────────────
+
             is ControlRequest.ListMembers ->
                 builder.setListMembers(ListMembersRequest.getDefaultInstance())
 
@@ -484,7 +503,7 @@ internal object ControlRequestEncoder {
                     ResolveDidRequest.newBuilder().setDid(request.did).build()
                 )
 
-            // ── Node scores ───────────────────────────────────────────
+
             is ControlRequest.ListNodeScores ->
                 builder.setListNodeScores(ListNodeScoresRequest.getDefaultInstance())
 
@@ -493,13 +512,13 @@ internal object ControlRequestEncoder {
                     GetNodeScoreRequest.newBuilder().setPeerId(request.peerId).build()
                 )
 
-            // ── Oracle (not used from Android) ────────────────────────
+
             is ControlRequest.GetOracleScore ->
                 builder.setQueryPlayerScoreProof(
                     QueryPlayerScoreProofRequest.newBuilder().setPlayerId(request.playerId).build()
                 )
 
-            // ── Push management ───────────────────────────────────────
+
             is ControlRequest.RegisterPushEndpoint ->
                 builder.setRegisterPushEndpoint(
                     RegisterPushEndpointRequest.newBuilder()
@@ -531,7 +550,7 @@ internal object ControlRequestEncoder {
         return builder.build()
     }
 
-    // ── Sub-builders ─────────────────────────────────────────────────────
+
 
     private fun buildAuth(ctx: AuthContext): ProtoAuth =
         ProtoAuth.newBuilder()
