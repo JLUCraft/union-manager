@@ -1,4 +1,4 @@
-package com.jlucraft.console.nativecore
+package cn.jlucraft.manager.nativecore
 
 import android.app.Activity
 import android.hardware.biometrics.BiometricManager

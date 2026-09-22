@@ -1,11 +1,11 @@
 [package]
-name = "union-manager-jni"
+name = "jlucraft-manager-jni"
 version = "0.1.0"
 edition = "2024"
 publish = false
 [workspace]
 [lib]
-name = "union_manager"
+name = "jlucraft_manager"
 crate-type = ["cdylib","rlib"]
 [dependencies]
 zeroize = "1"

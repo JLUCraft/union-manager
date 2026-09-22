@@ -1,4 +1,4 @@
-package com.jlucraft.console.nativecore
+package cn.jlucraft.manager.nativecore
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button

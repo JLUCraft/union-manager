@@ -1262,6 +1262,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
+name = "jlucraft-manager-jni"
+version = "0.1.0"
+dependencies = [
+ "jni",
+ "serde_json",
+ "tokio",
+ "union-core",
+ "zeroize",
+]
+
+[[package]]
 name = "jni"
 version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3098,17 +3109,6 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "union-manager-jni"
-version = "0.1.0"
-dependencies = [
- "jni",
- "serde_json",
- "tokio",
- "union-core",
- "zeroize",
 ]
 
 [[package]]

@@ -3,10 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 android {
-    namespace = "com.jlucraft.console"
+    namespace = "cn.jlucraft.manager"
     compileSdk = 37
     defaultConfig {
-        applicationId = "com.jlucraft.console"
+        applicationId = "cn.jlucraft.manager"
         minSdk = 33
         targetSdk = 37
         versionCode = 2
@@ -46,7 +46,7 @@ dependencies {
 // Explicit failure prevents shipping a manager that only fails when JNI is first used.
 tasks.register("checkNativeLibrary") {
     doLast {
-        check(fileTree("src/main/jniLibs").matching { include("**/libunion_manager.so") }.files.isNotEmpty()) {
+        check(fileTree("src/main/jniLibs").matching { include("**/libjlucraft_manager.so") }.files.isNotEmpty()) {
             "Build JNI first: ./scripts/build-native.sh"
         }
     }

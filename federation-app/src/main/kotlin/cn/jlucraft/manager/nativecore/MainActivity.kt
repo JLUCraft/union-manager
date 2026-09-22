@@ -1,4 +1,4 @@
-package com.jlucraft.console.nativecore
+package cn.jlucraft.manager.nativecore
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity

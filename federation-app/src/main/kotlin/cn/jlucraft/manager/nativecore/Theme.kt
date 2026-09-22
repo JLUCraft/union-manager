@@ -1,4 +1,4 @@
-package com.jlucraft.console.nativecore
+package cn.jlucraft.manager.nativecore
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme

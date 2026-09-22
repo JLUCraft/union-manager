@@ -1,6 +1,6 @@
-package com.jlucraft.console.nativecore;
+package cn.jlucraft.manager.nativecore;
 public class UnionNative {
-  static {System.loadLibrary("union_manager");}
+  static {System.loadLibrary("jlucraft_manager");}
   public static native byte[] generateSecret();
   public static native String peerId(byte[] secret);
   public static native String execute(byte[] secret,String input);

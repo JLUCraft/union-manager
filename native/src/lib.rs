@@ -26,7 +26,7 @@ fn identity(env: &JNIEnv<'_>, secret: &JByteArray<'_>) -> Result<Identity, Strin
     Identity::import_secret(&bytes).map_err(|e| e.to_string())
 }
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_jlucraft_console_nativecore_UnionNative_generateSecret(
+pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_generateSecret(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
 ) -> jbyteArray {
@@ -50,7 +50,7 @@ pub extern "system" fn Java_com_jlucraft_console_nativecore_UnionNative_generate
     }
 }
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_jlucraft_console_nativecore_UnionNative_peerId(
+pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_peerId(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     secret: JByteArray<'_>,
@@ -62,7 +62,7 @@ pub extern "system" fn Java_com_jlucraft_console_nativecore_UnionNative_peerId(
     reply(&mut env, result)
 }
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_jlucraft_console_nativecore_UnionNative_execute(
+pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_execute(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     secret: JByteArray<'_>,
