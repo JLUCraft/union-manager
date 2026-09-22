@@ -1,6 +1,6 @@
 # manager-app
 
-当前 Android 入口是 `federation-app`，通过 `native` JNI 调用相邻 `union-core`。`app/` 是旧 JVM 协议实现，保留参考、已从 Gradle settings 排除。
+当前 Android 入口是 `federation-app`，通过 `native` JNI 调用相邻 `union-core`。`app/` 是旧 JVM 协议实现，保留参考、已从 Gradle settings 排除（其 proto 任务仍引用已迁往 `union-core/proto/` 的旧 `docs/proto` 路径，仅作代码参考，不参与构建）。
 
 构建要求：JDK 21、Android SDK 37、适合当前宿主机的 NDK、cargo-ndk。
 
