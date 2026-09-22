@@ -38,4 +38,3 @@ Thumbs.db
 **/.gradle/
 **/build/
 **/src/main/jniLibs/
-local.properties

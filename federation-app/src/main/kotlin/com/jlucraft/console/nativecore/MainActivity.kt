@@ -30,8 +30,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import android.view.WindowManager
 import java.security.SecureRandom
+import android.view.WindowManager
 
 class MainActivity : ComponentActivity() {
     private lateinit var vault: BiometricVault
@@ -130,60 +130,60 @@ class MainActivity : ComponentActivity() {
                             if (message.isNotBlank()) Text(message)
                             Button(onClick = { unlock() }, enabled = !busy) { Text("验证身份") }
                         } else {
-                        ConnectionCard(
-                            address = address,
-                            peer = peer,
-                            identity = identity,
-                            message = message,
-                            connected = state != null,
-                            leagueCount = state?.optJSONObject("leagues")?.length() ?: 0,
-                            busy = busy,
-                            onAddressChange = { address = it; state = null },
-                            onPeerChange = { peer = it; state = null },
-                            onConnect = { request() },
-                        )
-                        GovernanceCard(state, identity, busy) { request(it) }
-                        SeasonCard(state, identity, busy) { request(it) }
-                        EnrollmentCard(
-                            memberId = memberId,
-                            memberClub = memberClub,
-                            memberDevice = memberDevice,
-                            connected = state != null,
-                            busy = busy,
-                            onMemberIdChange = { memberId = it },
-                            onMemberClubChange = { memberClub = it },
-                            onMemberDeviceChange = { memberDevice = it },
-                            onEnroll = {
-                                request(JSONObject().put("type", "enroll").put("member", memberId).put("club", memberClub).put("device", memberDevice))
-                            },
-                        )
-                        CreateLeagueCard(
-                            league = league,
-                            seats = seats,
-                            crossClub = crossClub,
-                            host = host,
-                            scorer = scorer,
-                            connected = state != null,
-                            busy = busy,
-                            seatsValid = seatsValid,
-                            onLeagueChange = { league = it },
-                            onSeatsChange = { seats = it },
-                            onCrossClubChange = { crossClub = it },
-                            onHostChange = { host = it },
-                            onScorerChange = { scorer = it },
-                            onCreate = {
-                                request(JSONObject().put("type", "create_league").put("league", league).put("host", host).put("scorer", scorer)
-                                    .put("rules", JSONObject().put("cross_club", crossClub).put("seats", seats.toInt()).put("reconnect_min_ms", 15000).put("reconnect_max_ms", 90000)))
-                            },
-                        )
-                        LeagueListSection(
-                            state = state,
-                            busy = busy,
-                            onStart = { id ->
-                                val seed = ByteArray(32).also { SecureRandom().nextBytes(it) }
-                                request(JSONObject().put("type", "start").put("league", id).put("seed", JSONArray(seed.map { it.toInt() and 255 })))
-                            },
-                        )
+                            ConnectionCard(
+                                address = address,
+                                peer = peer,
+                                identity = identity,
+                                message = message,
+                                connected = state != null,
+                                leagueCount = state?.optJSONObject("leagues")?.length() ?: 0,
+                                busy = busy,
+                                onAddressChange = { address = it; state = null },
+                                onPeerChange = { peer = it; state = null },
+                                onConnect = { request() },
+                            )
+                            GovernanceCard(state, identity, busy) { request(it) }
+                            SeasonCard(state, identity, busy) { request(it) }
+                            EnrollmentCard(
+                                memberId = memberId,
+                                memberClub = memberClub,
+                                memberDevice = memberDevice,
+                                connected = state != null,
+                                busy = busy,
+                                onMemberIdChange = { memberId = it },
+                                onMemberClubChange = { memberClub = it },
+                                onMemberDeviceChange = { memberDevice = it },
+                                onEnroll = {
+                                    request(JSONObject().put("type", "enroll").put("member", memberId).put("club", memberClub).put("device", memberDevice))
+                                },
+                            )
+                            CreateLeagueCard(
+                                league = league,
+                                seats = seats,
+                                crossClub = crossClub,
+                                host = host,
+                                scorer = scorer,
+                                connected = state != null,
+                                busy = busy,
+                                seatsValid = seatsValid,
+                                onLeagueChange = { league = it },
+                                onSeatsChange = { seats = it },
+                                onCrossClubChange = { crossClub = it },
+                                onHostChange = { host = it },
+                                onScorerChange = { scorer = it },
+                                onCreate = {
+                                    request(JSONObject().put("type", "create_league").put("league", league).put("host", host).put("scorer", scorer)
+                                        .put("rules", JSONObject().put("cross_club", crossClub).put("seats", seats.toInt()).put("reconnect_min_ms", 15000).put("reconnect_max_ms", 90000)))
+                                },
+                            )
+                            LeagueListSection(
+                                state = state,
+                                busy = busy,
+                                onStart = { id ->
+                                    val seed = ByteArray(32).also { SecureRandom().nextBytes(it) }
+                                    request(JSONObject().put("type", "start").put("league", id).put("seed", JSONArray(seed.map { it.toInt() and 255 })))
+                                },
+                            )
                         }
                     }
                 }
