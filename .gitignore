@@ -29,3 +29,13 @@ Thumbs.db
 # Log / temp files
 *.log
 *.tmp
+
+/target/
+**/target/
+.local/
+*.key
+*.pem
+**/.gradle/
+**/build/
+**/src/main/jniLibs/
+local.properties

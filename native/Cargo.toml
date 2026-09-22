@@ -1,0 +1,15 @@
+[package]
+name = "union-manager-jni"
+version = "0.1.0"
+edition = "2024"
+publish = false
+[workspace]
+[lib]
+name = "union_manager"
+crate-type = ["cdylib","rlib"]
+[dependencies]
+zeroize = "1"
+union-core = { path = "../../union-core" }
+jni = "0.21"
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time"] }

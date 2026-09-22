@@ -22,4 +22,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "union-manager"
-include(":app")
+include(":federation-app")
+// app/ preserves the legacy JVM protocol implementation, excluded from this build.
