@@ -11,11 +11,14 @@ public class UnionNative {
     reject(()->peerId(new byte[0]));
     reject(()->peerId(new byte[4097]));
     reject(()->peerId(new byte[]{1,2,3}));
-    reject(()->execute(secret,"{invalid"));
-    reject(()->execute(secret,"x".repeat(65537)));
+    assertCode(execute(secret,"{invalid"), "invalid_request");
+    assertCode(execute(secret,"x".repeat(65537)), "capacity");
     java.util.Arrays.fill(secret,(byte)0);
     reject(()->peerId(secret));
     System.out.println("JNI transient identity and invalid input rejection passed");
+  }
+  private static void assertCode(String response, String code) {
+    if (!response.contains("\"error_code\":\"" + code + "\"")) throw new AssertionError("missing structured rejection: " + response);
   }
   private static void reject(Runnable action) {
     try {action.run();}catch(IllegalStateException error){return;}
