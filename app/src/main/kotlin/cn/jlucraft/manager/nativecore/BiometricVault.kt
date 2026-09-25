@@ -7,6 +7,7 @@ import android.os.CancellationSignal
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
+import cn.jlucraft.manager.R
 import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -32,16 +33,16 @@ class BiometricVault(private val activity: Activity) {
         val current = generation
         val manager = activity.getSystemService(BiometricManager::class.java)
         if (manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) != BiometricManager.BIOMETRIC_SUCCESS) {
-            failure("请在系统设置中启用指纹或受支持的面容验证后重试")
+            failure(activity.getString(R.string.vault_unavailable))
             return
         }
         try {
-            check(!File(activity.noBackupFilesDir, "union-device.key").exists()) { "不支持明文身份格式" }
+            check(!File(activity.noBackupFilesDir, "union-device.key").exists()) { activity.getString(R.string.vault_plaintext_unsupported) }
             val keys = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             // Never regenerate a lost or invalidated wrapping key for an existing identity.
             val existing = stored.baseFile.exists() || File(stored.baseFile.path + ".bak").exists()
             if (!keys.containsAlias(alias)) {
-                check(!existing) { "设备身份无法解锁，请联系联盟管理员恢复授权" }
+                check(!existing) { activity.getString(R.string.vault_recovery_required) }
                 KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
                     init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                         .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
@@ -66,10 +67,10 @@ class BiometricVault(private val activity: Activity) {
             pending = signal
             BiometricPrompt.Builder(activity)
                 .setTitle(title)
-                .setSubtitle("验证身份以使用联盟管理权限")
+                .setSubtitle(activity.getString(R.string.vault_subtitle))
                 .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-                .setNegativeButton("取消", activity.mainExecutor) { _, _ ->
-                    if (generation == current) { pending = null; failure("验证已取消") }
+                .setNegativeButton(activity.getString(R.string.vault_cancel), activity.mainExecutor) { _, _ ->
+                    if (generation == current) { pending = null; failure(activity.getString(R.string.vault_cancelled)) }
                 }
                 .build().authenticate(BiometricPrompt.CryptoObject(cipher), signal, activity.mainExecutor,
                     object : BiometricPrompt.AuthenticationCallback() {
@@ -95,12 +96,12 @@ class BiometricVault(private val activity: Activity) {
                                 }
                                 success(material)
                             } catch (error: Exception) {
-                                failure("设备身份解锁失败，请重试或联系联盟管理员恢复授权")
+                                failure(activity.getString(R.string.vault_unlock_failed))
                             } finally { secret?.fill(0) }
                         }
                     })
         } catch (error: Exception) {
-            failure("设备身份无法解锁，请联系联盟管理员恢复授权")
+            failure(activity.getString(R.string.vault_locked))
         }
     }
 }

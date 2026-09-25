@@ -3,6 +3,7 @@ package cn.jlucraft.manager.nativecore
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Button
@@ -18,8 +19,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import cn.jlucraft.manager.R
+
 
 @Composable
 fun CreateLeagueCard(
@@ -40,22 +44,22 @@ fun CreateLeagueCard(
 ) {
     var showAdvanced by rememberSaveable { mutableStateOf(host.isBlank() || scorer.isBlank()) }
     ManagerCard(
-        title = "创建联赛",
-        helper = if (connected) null else "连接联盟后可创建联赛",
+        title = stringResource(R.string.governance_create_league),
+        helper = if (connected) null else stringResource(R.string.governance_create_league_helper),
     ) {
         OutlinedTextField(
             value = league,
             onValueChange = onLeagueChange,
-            label = { Text("联赛名称") },
+            label = { Text(stringResource(R.string.governance_league_name)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
             value = seats,
             onValueChange = onSeatsChange,
-            label = { Text("每队参赛人数") },
+            label = { Text(stringResource(R.string.governance_seats_label)) },
             singleLine = true,
-            supportingText = if (seatsValid) null else ({ Text("请输入大于 0 的数字") }),
+            supportingText = if (seatsValid) null else ({ Text(stringResource(R.string.governance_seats_invalid)) }),
             modifier = Modifier.fillMaxWidth(),
         )
         Row(
@@ -66,29 +70,29 @@ fun CreateLeagueCard(
         ) {
             Checkbox(checked = crossClub, onCheckedChange = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("允许跨校组队", style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.league_cross_club), style = MaterialTheme.typography.bodyLarge)
         }
-        TextButton(onClick = { showAdvanced = !showAdvanced }) {
-            Text(if (showAdvanced) "收起比赛服务配置" else "比赛服务配置（必填）")
+        TextButton(onClick = { showAdvanced = !showAdvanced }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
+            Text(stringResource(if (showAdvanced) R.string.league_advanced_hide else R.string.league_advanced_show))
 
         }
         if (showAdvanced) {
             Text(
-                "比赛代理与计分服务身份由联盟组织者分配。",
+                stringResource(R.string.league_advanced_helper),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             OutlinedTextField(
                 value = host,
                 onValueChange = onHostChange,
-                label = { Text("比赛代理身份") },
+                label = { Text(stringResource(R.string.league_host_identity)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = scorer,
                 onValueChange = onScorerChange,
-                label = { Text("计分服务身份") },
+                label = { Text(stringResource(R.string.league_scorer_identity)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -96,9 +100,9 @@ fun CreateLeagueCard(
         Button(
             onClick = onCreate,
             enabled = !busy && connected && seatsValid && league.isNotBlank() && host.isNotBlank() && scorer.isNotBlank(),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET),
         ) {
-            Text("创建联赛")
+            Text(stringResource(R.string.governance_create_league))
         }
     }
 }

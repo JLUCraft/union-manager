@@ -1,5 +1,11 @@
 package cn.jlucraft.manager.nativecore
 
+import androidx.compose.foundation.layout.heightIn
+
+import cn.jlucraft.manager.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.Row
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -53,8 +59,12 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 var address by remember { mutableStateOf(preferences.getString("address", "") ?: "") }
                 var peer by remember { mutableStateOf(preferences.getString("peer", "") ?: "") }
+                var genesisHash by remember { mutableStateOf(preferences.getString("genesis_hash", "") ?: "") }
+                var identityConfiguration by remember { mutableStateOf(preferences.getString("identity_configuration", "") ?: "") }
+                val identityDirectory = java.io.File(noBackupFilesDir, "identity")
                 var identity by remember { mutableStateOf("") }
                 var state by remember { mutableStateOf<JSONObject?>(null) }
+                var office by remember { mutableStateOf(preferences.getBoolean("office", false)) }
                 var busy by remember { mutableStateOf(false) }
                 var message by remember { mutableStateOf("") }
                 var league by remember { mutableStateOf("") }
@@ -62,14 +72,11 @@ class MainActivity : ComponentActivity() {
                 var crossClub by remember { mutableStateOf(false) }
                 var host by remember { mutableStateOf("") }
                 var scorer by remember { mutableStateOf("") }
-                var memberId by remember { mutableStateOf("") }
-                var memberClub by remember { mutableStateOf("jlu") }
-                var memberDevice by remember { mutableStateOf("") }
                 LaunchedEffect(lockEpoch) { state = null; busy = false; identity = "" }
                 fun unlock() {
                     if (busy) return
                     busy = true
-                    vault.authenticate("解锁联盟管理", { secret ->
+                    vault.authenticate(getString(R.string.unlock_management), { secret ->
                         identity = UnionNative.peerId(secret)
                         unlocked = true
                         busy = false
@@ -78,37 +85,70 @@ class MainActivity : ComponentActivity() {
                 }
                 fun request(action: JSONObject? = null) {
                     if (busy || !unlocked) return
+                    if (identityConfiguration.isBlank()) { message = getString(R.string.identity_configuration_required); return }
                     val requestEpoch = lockEpoch
                     val requestAddress = address
                     val requestPeer = peer
-                    val input = JSONObject().put("address", requestAddress).put("peer", requestPeer)
-                    val protectedTypes = setOf("grant_admin", "revoke_admin", "rotate_member_device", "enroll", "create_league", "update_council", "set_consensus_members", "create_season", "schedule_league", "resolve_dispute")
-                    val proposed = action != null && state?.optJSONObject("council") != null && action.optString("type") in protectedTypes
-                    val submitted = if (proposed) JSONObject().put("type", "propose").put("id", java.util.UUID.randomUUID().toString()).put("action", action).put("expires_ms", System.currentTimeMillis() + 7 * 86400000L) else action
-                    submitted?.let { input.put("action", it).put("revision", state?.getLong("revision")) }
+                    val requestGenesis = genesisHash
+                    val requestOffice = office
+                    val input = JSONObject().put("address", requestAddress).put("peer", requestPeer).put("genesis_hash", requestGenesis)
+                    if (identityConfiguration.isNotBlank()) input.put("identity", identityConfig(identityConfiguration, identityDirectory))
+                    state?.let { input.put("revision", it.getLong("revision")) }
+                    action?.let { input.put("action", it) }
                     busy = true
-                    vault.authenticate(if (action == null) "同步联盟信息" else "确认管理操作", { secret ->
+                    vault.authenticate(if (action == null) getString(R.string.sync_management) else getString(R.string.confirm_management), { secret ->
                         val material = secret.copyOf()
                         scope.launch(start = CoroutineStart.UNDISPATCHED) {
                             try {
                                 val result = withContext(Dispatchers.IO) {
-                                    try { JSONObject(UnionNative.execute(material, input.toString())) }
+                                    try { JSONObject(if (requestOffice) UnionNative.executeOffice(material, input.toString()) else UnionNative.execute(material, input.toString())) }
                                     finally { material.fill(0) }
                                 }
                                 if (lockEpoch == requestEpoch && unlocked) {
-                                    if (!result.isNull("error")) error(result.getString("error"))
-                                    state = result.getJSONObject("state")
-                                    preferences.edit().putString("address", requestAddress).putString("peer", requestPeer).apply()
-                                    message = if (action == null) "已同步" else if (proposed) "提案已提交，等待其他社团确认" else "操作已完成"
+                                    if (!result.isNull("error")) throw NativeFailure(result.optString("error_code"), result.getString("error"))
+                                    val snapshot = result.getJSONObject("state")
+                                    result.optJSONObject("identity_view")?.let { projection ->
+                                        snapshot.put("members", projection.getJSONObject("members")).put("admins", projection.getJSONArray("admins"))
+                                    }
+                                    state = snapshot
+                                    preferences.edit().putString("address", requestAddress).putString("peer", requestPeer).putString("genesis_hash", requestGenesis).putBoolean("office", requestOffice).apply()
+                                    message = if (action == null) getString(R.string.management_synced) else getString(R.string.management_done)
                                 }
                             } catch (error: Exception) {
-                                if (lockEpoch == requestEpoch) message = "操作未完成，请检查连接后重试"
+                                if (lockEpoch == requestEpoch) message = getString(if (error is NativeFailure && error.code == "authority_unavailable") R.string.identity_unavailable else R.string.management_failed)
                             } finally {
                                 material.fill(0)
                                 if (lockEpoch == requestEpoch) busy = false
                             }
                         }
                     }, { if (lockEpoch == requestEpoch) { message = it; busy = false } })
+                }
+                fun executeOps(input: JSONObject, reply: (JSONObject) -> Unit, identityOperation: Boolean = false) {
+                    if (busy || !unlocked) return
+                    busy = true
+                    val epoch = lockEpoch
+                    vault.authenticate(getString(if (identityOperation) R.string.identity_authenticate else R.string.ops_authenticate), { secret ->
+                        val material = secret.copyOf()
+                        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                            try {
+                                val response = withContext(Dispatchers.IO) {
+                                    try { JSONObject(if (identityOperation && input.optString("operation") == "sign_offline") UnionNative.signIdentityRecord(material, input.getJSONObject("record").toString()) else if (identityOperation) UnionNative.executeIdentity(material, input.toString()) else UnionNative.executeOps(material, input.toString())) }
+                                    finally { material.fill(0) }
+                                }
+                                if (lockEpoch == epoch && unlocked) reply(response)
+                            } catch (_: Exception) {
+                                if (lockEpoch == epoch && unlocked) reply(JSONObject().put("error", true).put("truncated", true))
+                            } finally {
+                                material.fill(0)
+                                if (lockEpoch == epoch) busy = false
+                            }
+                        }
+                    }, {
+                        if (lockEpoch == epoch) {
+                            busy = false
+                            reply(JSONObject().put("error", true))
+                        }
+                    })
                 }
                 val seatsValid = (seats.toIntOrNull() ?: 0) > 0
                 Surface(Modifier.fillMaxSize()) {
@@ -118,72 +158,74 @@ class MainActivity : ComponentActivity() {
                     ) {
                         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                         Column {
-                            Text("高校联盟管理", style = MaterialTheme.typography.headlineSmall)
+                            Text(stringResource(R.string.management_title), style = MaterialTheme.typography.headlineSmall)
                             Text(
-                                "吉林大学 · 社团联赛组织端",
+                                stringResource(R.string.management_subtitle),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         if (!unlocked) {
-                            Text("验证身份后继续管理联赛与成员")
+                            Text(stringResource(R.string.management_locked))
                             if (message.isNotBlank()) Text(message)
-                            Button(onClick = { unlock() }, enabled = !busy) { Text("验证身份") }
+                            Button(modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET), onClick = { unlock() }, enabled = !busy) { Text(stringResource(R.string.management_unlock)) }
                         } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                FilterChip(selected = !office, enabled = !busy, onClick = { office = false; state = null; message = "" }, label = { Text(stringResource(R.string.mode_league)) })
+                                FilterChip(selected = office, enabled = !busy, onClick = { office = true; state = null; message = "" }, label = { Text(stringResource(R.string.mode_office)) })
+                            }
+                            IdentityCard(identityConfiguration, identity, busy, identityDirectory, { value ->
+                                identityConfiguration = value
+                                preferences.edit().putString("identity_configuration", value).apply()
+                                state = null
+                            }) { input, reply -> executeOps(input, reply, true) }
+                            GameOpsCard { input, reply -> executeOps(input, reply) }
                             ConnectionCard(
                                 address = address,
                                 peer = peer,
+                                genesisHash = genesisHash,
                                 identity = identity,
                                 message = message,
                                 connected = state != null,
-                                leagueCount = state?.optJSONObject("leagues")?.length() ?: 0,
                                 busy = busy,
                                 onAddressChange = { address = it; state = null },
                                 onPeerChange = { peer = it; state = null },
+                                onGenesisChange = { genesisHash = it.trim(); state = null },
                                 onConnect = { request() },
                             )
-                            GovernanceCard(state, identity, busy) { request(it) }
-                            SeasonCard(state, identity, busy) { request(it) }
-                            EnrollmentCard(
-                                memberId = memberId,
-                                memberClub = memberClub,
-                                memberDevice = memberDevice,
-                                connected = state != null,
-                                busy = busy,
-                                onMemberIdChange = { memberId = it },
-                                onMemberClubChange = { memberClub = it },
-                                onMemberDeviceChange = { memberDevice = it },
-                                onEnroll = {
-                                    request(JSONObject().put("type", "enroll").put("member", memberId).put("club", memberClub).put("device", memberDevice))
-                                },
-                            )
-                            CreateLeagueCard(
-                                league = league,
-                                seats = seats,
-                                crossClub = crossClub,
-                                host = host,
-                                scorer = scorer,
-                                connected = state != null,
-                                busy = busy,
-                                seatsValid = seatsValid,
-                                onLeagueChange = { league = it },
-                                onSeatsChange = { seats = it },
-                                onCrossClubChange = { crossClub = it },
-                                onHostChange = { host = it },
-                                onScorerChange = { scorer = it },
-                                onCreate = {
-                                    request(JSONObject().put("type", "create_league").put("league", league).put("host", host).put("scorer", scorer)
-                                        .put("rules", JSONObject().put("cross_club", crossClub).put("seats", seats.toInt()).put("reconnect_min_ms", 15000).put("reconnect_max_ms", 90000)))
-                                },
-                            )
-                            LeagueListSection(
-                                state = state,
-                                busy = busy,
-                                onStart = { id ->
-                                    val seed = ByteArray(32).also { SecureRandom().nextBytes(it) }
-                                    request(JSONObject().put("type", "start").put("league", id).put("seed", JSONArray(seed.map { it.toInt() and 255 })))
-                                },
-                            )
+                            if (!office) SeasonCard(state, identity, busy) { request(it) }
+                            if (office) {
+                                OfficeFilesCard(state, busy) { request(it) }
+                                OfficeCard(state, busy) { request(it) }
+                            } else {
+                                CreateLeagueCard(
+                                    league = league,
+                                    seats = seats,
+                                    crossClub = crossClub,
+                                    host = host,
+                                    scorer = scorer,
+                                    connected = state != null,
+                                    busy = busy,
+                                    seatsValid = seatsValid,
+                                    onLeagueChange = { league = it },
+                                    onSeatsChange = { seats = it },
+                                    onCrossClubChange = { crossClub = it },
+                                    onHostChange = { host = it },
+                                    onScorerChange = { scorer = it },
+                                    onCreate = {
+                                        request(JSONObject().put("type", "create_league").put("league", league).put("host", host).put("scorer", scorer)
+                                            .put("rules", JSONObject().put("cross_club", crossClub).put("seats", seats.toInt()).put("reconnect_min_ms", 15000).put("reconnect_max_ms", 90000)))
+                                    },
+                                )
+                                LeagueListSection(
+                                    state = state,
+                                    busy = busy,
+                                    onStart = { id ->
+                                        val seed = ByteArray(32).also { SecureRandom().nextBytes(it) }
+                                        request(JSONObject().put("type", "start").put("league", id).put("seed", JSONArray(seed.map { it.toInt() and 255 })))
+                                    },
+                                )
+                            }
                         }
                     }
                 }

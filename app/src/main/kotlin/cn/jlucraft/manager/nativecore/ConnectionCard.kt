@@ -1,5 +1,7 @@
 package cn.jlucraft.manager.nativecore
 
+import androidx.compose.foundation.layout.heightIn
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -9,6 +11,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import cn.jlucraft.manager.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -17,25 +21,26 @@ import androidx.compose.ui.unit.dp
 fun ConnectionCard(
     address: String,
     peer: String,
+    genesisHash: String,
     identity: String,
     message: String,
     connected: Boolean,
-    leagueCount: Int,
     busy: Boolean,
     onAddressChange: (String) -> Unit,
     onPeerChange: (String) -> Unit,
+    onGenesisChange: (String) -> Unit,
     onConnect: () -> Unit,
 ) {
     ManagerCard(
-        title = "联盟连接",
-        helper = if (connected) "联盟内共有 $leagueCount 个联赛" else "连接后可管理联盟成员与联赛",
-        statusText = if (connected) "已连接" else "未连接",
+        title = stringResource(R.string.connection_title),
+        helper = if (connected) null else stringResource(R.string.connection_help),
+        statusText = stringResource(if (connected) R.string.connection_connected else R.string.connection_disconnected),
         statusActive = connected,
     ) {
         OutlinedTextField(
             value = address,
             onValueChange = onAddressChange,
-            label = { Text("联盟连接地址") },
+            label = { Text(stringResource(R.string.connection_address)) },
             singleLine = true,
             enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
@@ -43,13 +48,21 @@ fun ConnectionCard(
         OutlinedTextField(
             value = peer,
             onValueChange = onPeerChange,
-            label = { Text("联盟身份（组织者提供）") },
+            label = { Text(stringResource(R.string.connection_peer)) },
             singleLine = true,
             enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
         )
-        Button(onClick = onConnect, enabled = !busy && address.isNotBlank() && peer.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-            Text("连接 / 刷新")
+        OutlinedTextField(
+            value = genesisHash,
+            onValueChange = onGenesisChange,
+            label = { Text(stringResource(R.string.genesis_hash_label)) },
+            singleLine = true,
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(onClick = onConnect, enabled = !busy && address.isNotBlank() && peer.isNotBlank() && genesisHash.matches(Regex("[a-f0-9]{64}")), modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET)) {
+            Text(stringResource(R.string.connection_refresh))
         }
         if (identity.isNotBlank()) {
             Surface(
@@ -59,7 +72,7 @@ fun ConnectionCard(
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        "本机管理设备身份",
+                        stringResource(R.string.connection_identity),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
