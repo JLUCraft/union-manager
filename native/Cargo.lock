@@ -1454,6 +1454,7 @@ dependencies = [
  "events",
  "flows",
  "jni 0.21.1",
+ "ndk-context",
  "serde",
  "serde_json",
  "tokio",

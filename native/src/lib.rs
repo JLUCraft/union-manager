@@ -10,6 +10,37 @@ use jni::{
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use zeroize::Zeroizing;
 
+// DNS discovery uses Android's ConnectivityManager. Keep its Application context
+// alive for the process, including background JNI calls after Activity recreation.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_initialize(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    context: jni::objects::JObject<'_>,
+) {
+    static CONTEXT: std::sync::OnceLock<jni::objects::GlobalRef> = std::sync::OnceLock::new();
+    let result = (|| -> jni::errors::Result<()> {
+        let vm = env.get_java_vm()?;
+        let context = env.new_global_ref(context)?;
+        CONTEXT.get_or_init(|| {
+            // Both pointers remain valid for the process; OnceLock serializes the
+            // sole initialization before Application.onCreate permits requests.
+            unsafe {
+                ndk_context::initialize_android_context(
+                    vm.get_java_vm_pointer().cast(),
+                    context.as_obj().as_raw().cast(),
+                );
+            }
+            context
+        });
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
+    }
+}
+
 const OPS_OPERATION: u8 = 3;
 const IDENTITY_OPERATION: u8 = 4;
 const MAX_REQUEST_BYTES: usize = 65536;
@@ -32,7 +63,7 @@ fn identity(env: &JNIEnv<'_>, secret: &JByteArray<'_>) -> Result<Identity, Strin
     Identity::import_secret(&bytes).map_err(|e| e.to_string())
 }
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_generateSecret(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_generateSecret(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
 ) -> jbyteArray {
@@ -56,7 +87,7 @@ pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_generateS
     }
 }
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_peerId(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_peerId(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     secret: JByteArray<'_>,
@@ -68,7 +99,7 @@ pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_peerId(
     reply(&mut env, result)
 }
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_execute(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_execute(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     secret: JByteArray<'_>,
@@ -111,7 +142,7 @@ async fn execute_ops(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_executeOps(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_executeOps(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     secret: JByteArray<'_>,
@@ -147,7 +178,12 @@ fn request(
                 .enable_all()
                 .build()
                 .map_err(|e| e.to_string())?;
-            if operation == IDENTITY_OPERATION {
+            if operation == PUSH_OPERATION {
+                let response = runtime
+                    .block_on(office::push(identity, &input))
+                    .map_err(|e| e.failure())?;
+                serde_json::to_string(&response).map_err(|e| e.to_string().into())
+            } else if operation == IDENTITY_OPERATION {
                 let input = serde_json::from_str(&input).map_err(invalid_request)?;
                 let response = runtime
                     .block_on(::client::trust::execute_identity(identity, input))
@@ -183,7 +219,7 @@ fn request(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_executeOffice(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_executeOffice(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     secret: JByteArray<'_>,
@@ -193,7 +229,7 @@ pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_executeOf
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_readOfficeFile(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_readOfficeFile(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     snapshot: JString<'_>,
@@ -232,7 +268,7 @@ pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_readOffic
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_executeIdentity(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_executeIdentity(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     secret: JByteArray<'_>,
@@ -242,7 +278,7 @@ pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_executeId
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_publicKey(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_publicKey(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     secret: JByteArray<'_>,
@@ -269,7 +305,7 @@ fn bounded_identity_text(env: &mut JNIEnv<'_>, input: &JString<'_>) -> Result<St
     Ok(text)
 }
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_signIdentityRecord(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_signIdentityRecord(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     secret: JByteArray<'_>,
@@ -288,7 +324,7 @@ pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_signIdent
     reply(&mut env, result)
 }
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_cn_jlucraft_manager_nativecore_UnionNative_reviewIdentityHistory(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_reviewIdentityHistory(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     input: JString<'_>,
@@ -319,4 +355,15 @@ fn invalid_request(error: impl ToString) -> ::client::protocol::ClientFailure {
         code: ::client::protocol::ClientErrorCode::InvalidRequest,
         message: error.to_string(),
     }
+}
+
+const PUSH_OPERATION: u8 = 5;
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_executePush(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    secret: JByteArray<'_>,
+    input: JString<'_>,
+) -> jstring {
+    request(&mut env, &secret, input, PUSH_OPERATION)
 }

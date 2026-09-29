@@ -1,12 +1,13 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 android {
-    namespace = "cn.jlucraft.manager"
+    namespace = "com.jlucraft.manager"
     compileSdk = 37
     defaultConfig {
-        applicationId = "cn.jlucraft.manager"
+        applicationId = "com.jlucraft.manager"
         minSdk = 33
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -39,6 +40,12 @@ android {
     kotlin { jvmToolchain(21) }
 }
 dependencies {
+    implementation("androidx.navigation3:navigation3-ui:1.2.0")
+    implementation("androidx.compose.material3.adaptive:adaptive-navigation3")
+    implementation("androidx.compose.material3:material3-adaptive-navigation-suite")
+    implementation("androidx.compose.material:material-icons-core")
+    implementation("org.unifiedpush.android:connector:3.3.5")
+    implementation("org.unifiedpush.android:embedded-fcm-distributor:3.1.0")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
