@@ -43,6 +43,8 @@ class OfficeScreenTest {
         } }
         captureScreen("android-office-01-disconnected-menu")
         compose.onNodeWithText(text(R.string.navigation_account)).performClick()
+        compose.onNodeWithText(text(R.string.connection_link)).assertExists()
+        compose.onNodeWithText(text(R.string.connection_manual)).performScrollTo().performClick()
         compose.onNodeWithText(text(R.string.connection_address)).assertExists()
         compose.onNodeWithText(text(R.string.connection_refresh)).performScrollTo().assertIsNotEnabled()
         compose.waitForIdle()

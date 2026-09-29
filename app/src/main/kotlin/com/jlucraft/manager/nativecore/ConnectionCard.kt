@@ -10,6 +10,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.jlucraft.manager.R
@@ -30,13 +35,43 @@ fun ConnectionCard(
     onPeerChange: (String) -> Unit,
     onGenesisChange: (String) -> Unit,
     onConnect: () -> Unit,
+    onLink: (ConnectionTarget) -> Unit = {},
 ) {
+    var link by rememberSaveable { mutableStateOf("") }
+    var linkInvalid by rememberSaveable { mutableStateOf(false) }
+    var manual by rememberSaveable { mutableStateOf(connected || address.isNotBlank() || peer.isNotBlank() || genesisHash.isNotBlank()) }
     ManagerCard(
         title = stringResource(R.string.connection_title),
         helper = if (connected) null else stringResource(R.string.connection_help),
         statusText = stringResource(if (connected) R.string.connection_connected else R.string.connection_disconnected),
         statusActive = connected,
     ) {
+        if (!connected) {
+            OutlinedTextField(
+                value = link,
+                onValueChange = { link = it; linkInvalid = false },
+                label = { Text(stringResource(R.string.connection_link)) },
+                placeholder = { Text(stringResource(R.string.connection_link_placeholder)) },
+                supportingText = { Text(stringResource(if (linkInvalid) R.string.connection_link_invalid else R.string.connection_link_help)) },
+                isError = linkInvalid,
+                singleLine = true,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = {
+                    val target = parseConnectionLink(link)
+                    linkInvalid = target == null
+                    if (target != null) onLink(target)
+                },
+                enabled = !busy && link.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET),
+            ) { Text(stringResource(R.string.connection_link_connect)) }
+            TextButton(onClick = { manual = !manual }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
+                Text(stringResource(if (manual) R.string.connection_manual_hide else R.string.connection_manual))
+            }
+        }
+        if (manual || connected) {
         OutlinedTextField(
             value = address,
             onValueChange = onAddressChange,
@@ -61,8 +96,9 @@ fun ConnectionCard(
             enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
         )
-        Button(onClick = onConnect, enabled = !busy && address.isNotBlank() && peer.isNotBlank() && genesisHash.matches(Regex("[a-f0-9]{64}")), modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET)) {
+        Button(onClick = onConnect, enabled = !busy && address.isNotBlank() && peer.isNotBlank() && GENESIS_HASH_PATTERN.matches(genesisHash), modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET)) {
             Text(stringResource(R.string.connection_refresh))
+        }
         }
         if (identity.isNotBlank()) {
             Surface(

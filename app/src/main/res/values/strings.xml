@@ -20,6 +20,13 @@
     <string name="connection_help">输入组织提供的连接信息及独立确认的初始状态摘要</string>
     <string name="connection_connected">已连接</string>
     <string name="connection_disconnected">未连接</string>
+    <string name="connection_link">连接链接</string>
+    <string name="connection_link_placeholder">folly://federation?…</string>
+    <string name="connection_link_help">粘贴组织者发给你的链接，然后点击连接</string>
+    <string name="connection_link_invalid">这不是有效的连接链接，请完整复制组织者发来的链接</string>
+    <string name="connection_link_connect">连接</string>
+    <string name="connection_manual">手动填写连接信息</string>
+    <string name="connection_manual_hide">收起手动填写</string>
     <string name="connection_address">连接地址</string>
     <string name="connection_peer">服务身份（组织提供）</string>
     <string name="connection_refresh">连接 / 刷新</string>

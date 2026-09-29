@@ -102,6 +102,7 @@ class MainActivity : ComponentActivity() {
                 var state by remember { mutableStateOf<JSONObject?>(null) }
                 var office by remember { mutableStateOf(intent.hasExtra("office_notice") || preferences.getBoolean("office", true)) }
                 var busy by remember { mutableStateOf(false) }
+                var connectAfterLink by remember { mutableStateOf(false) }
                 var pushReady by remember { mutableStateOf<Boolean?>(null) }
                 var message by remember { mutableStateOf("") }
                 var league by remember { mutableStateOf("") }
@@ -212,6 +213,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }, { if (lockEpoch == requestEpoch) { message = it; busy = false } })
                 }
+                LaunchedEffect(connectAfterLink) {
+                    if (connectAfterLink) {
+                        connectAfterLink = false
+                        request()
+                    }
+                }
                 fun executeOps(input: JSONObject, reply: (JSONObject) -> Unit, identityOperation: Boolean = false) {
                     if (busy || !unlocked) return
                     busy = true
@@ -257,6 +264,11 @@ class MainActivity : ComponentActivity() {
                         onPeerChange = { peer = it; state = null },
                         onGenesisChange = { genesisHash = it.trim(); state = null },
                         onConnect = { request() },
+                        onLink = { target ->
+                            address = target.address; peer = target.peer; genesisHash = target.genesisHash
+                            state = null
+                            connectAfterLink = true
+                        },
                     )
                 }
                 val seatsValid = (seats.toIntOrNull() ?: 0) > 0
