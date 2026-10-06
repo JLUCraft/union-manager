@@ -45,7 +45,6 @@ dependencies {
     implementation("androidx.compose.material3:material3-adaptive-navigation-suite")
     implementation("androidx.compose.material:material-icons-core")
     implementation("org.unifiedpush.android:connector:3.3.5")
-    implementation("org.unifiedpush.android:embedded-fcm-distributor:3.1.0")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
