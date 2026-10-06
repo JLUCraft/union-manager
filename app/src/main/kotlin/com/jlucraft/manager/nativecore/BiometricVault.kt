@@ -39,7 +39,6 @@ class BiometricVault(private val activity: Activity) {
             return
         }
         try {
-            check(!File(activity.noBackupFilesDir, "union-device.key").exists()) { activity.getString(R.string.vault_plaintext_unsupported) }
             val keys = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             // Never regenerate a lost or invalidated wrapping key for an existing identity.
             val existing = stored.baseFile.exists() || File(stored.baseFile.path + ".bak").exists()

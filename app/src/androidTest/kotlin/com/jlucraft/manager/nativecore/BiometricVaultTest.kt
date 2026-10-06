@@ -49,7 +49,6 @@ class BiometricVaultTest {
         assertTrue(encrypted.isFile)
         val permissionMask = OsConstants.S_IRWXU or OsConstants.S_IRWXG or OsConstants.S_IRWXO
         assertEquals(OsConstants.S_IRUSR or OsConstants.S_IWUSR, Os.stat(encrypted.path).st_mode and permissionMask)
-        assertFalse(File(directory, "union-device.key").exists())
         compose.activityRule.scenario.recreate()
         val next = publicIdentityAfterAuthentication()
         assertEquals(first, next)

@@ -253,7 +253,6 @@
     <string name="identity_authenticate">确认统一身份操作</string>
     <string name="identity_sign_offline">离线联署（提交时仍会再次核对权限）</string>
     <string name="identity_configuration_required">请先保存组织者提供的设置</string>
-    <string name="vault_plaintext_unsupported">不支持明文身份格式</string>
     <string name="vault_recovery_required">设备身份无法解锁，请联系联盟管理员恢复授权</string>
     <string name="identifier_details">查看完整标识符</string>
     <string name="identifier_copy">复制完整标识符</string>
