@@ -15,14 +15,23 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
+import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 
 /** Opt-in integration recording against a disposable local node; never injects production data. */
+@RequiresFixture
 @RunWith(AndroidJUnit4::class)
 class LocalOfficeFlowTest {
+    companion object {
+        @JvmStatic @BeforeClass fun requireDisposableFixture() {
+            // Gate before Compose's coroutine test rule: a missing opt-in fixture is a skip,
+            // not a failed coroutine test or an excuse to synthesize production UI data.
+            assumeTrue(InstrumentationRegistry.getArguments().getString("localOfficeDemo") == "true")
+        }
+    }
     @get:Rule val compose = createComposeRule()
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private fun text(id: Int) = instrumentation.targetContext.getString(id)
@@ -31,7 +40,6 @@ class LocalOfficeFlowTest {
     ).use { it.readBytes() }
 
     @Test fun applicationSubmissionApprovalAndSignup() {
-        assumeTrue(InstrumentationRegistry.getArguments().getString("localOfficeDemo") == "true")
         val config = JSONObject(String(shellFile("config.json"), Charsets.UTF_8))
         val secret = shellFile("device.key")
         val directory = File(instrumentation.targetContext.cacheDir, "local-office-demo")
