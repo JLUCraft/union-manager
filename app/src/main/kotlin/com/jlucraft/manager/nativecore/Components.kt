@@ -20,6 +20,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -172,19 +176,61 @@ internal fun StatusPill(text: String, active: Boolean) {
     }
 }
 
+internal fun copyToClipboard(context: android.content.Context, label: String, value: String) {
+    context.getSystemService(android.content.ClipboardManager::class.java)
+        .setPrimaryClip(android.content.ClipData.newPlainText(label, value))
+}
+
+private const val SHORT_IDENTIFIER_EDGE = 8
+
+internal fun shortIdentifier(value: String): String =
+    if (value.length > SHORT_IDENTIFIER_EDGE * 2 + 1) "${value.take(SHORT_IDENTIFIER_EDGE)}…${value.takeLast(SHORT_IDENTIFIER_EDGE)}" else value
+
 @Composable
-fun IdentifierDetails(value: String) {
+fun IdentifierDetails(value: String, label: Int = R.string.identifier_details) {
     if (value.isBlank()) return
     var expanded by remember(value) { mutableStateOf(false) }
+    var copied by remember(value) { mutableStateOf(false) }
     val context = LocalContext.current
     TextButton(onClick = { expanded = !expanded }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
-        Text(stringResource(R.string.identifier_details))
+        Text(stringResource(label))
     }
     if (expanded) {
         SelectionContainer { Text(value, style = MaterialTheme.typography.bodySmall) }
         TextButton(onClick = {
-            context.getSystemService(android.content.ClipboardManager::class.java)
-                .setPrimaryClip(android.content.ClipData.newPlainText(context.getString(R.string.identifier_details), value))
-        }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(R.string.identifier_copy)) }
+            copyToClipboard(context, context.getString(R.string.identifier_details), value)
+            copied = true
+        }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(if (copied) R.string.identifier_copied else R.string.identifier_copy)) }
     }
+}
+
+/** Shared action button: primary, secondary, or destructive with a confirmation dialog. */
+internal enum class ActionKind { Primary, Secondary, Confirmed, Destructive }
+
+@Composable
+internal fun ActionButton(label: Int, enabled: Boolean, kind: ActionKind = ActionKind.Primary, confirmText: Int = R.string.confirm_irreversible, click: () -> Unit) {
+    var confirming by remember { mutableStateOf(false) }
+    val modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET)
+    val onClick = if (kind == ActionKind.Destructive || kind == ActionKind.Confirmed) ({ confirming = true }) else click
+    when (kind) {
+        ActionKind.Primary, ActionKind.Confirmed -> Button(onClick = onClick, enabled = enabled, modifier = modifier) { Text(stringResource(label)) }
+        ActionKind.Secondary -> OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier) { Text(stringResource(label)) }
+        ActionKind.Destructive -> OutlinedButton(
+            onClick = onClick, enabled = enabled, modifier = modifier,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = if (enabled) 1f else DISABLED_BORDER_ALPHA)),
+        ) { Text(stringResource(label)) }
+    }
+    if (confirming) AlertDialog(
+        onDismissRequest = { confirming = false },
+        title = { Text(stringResource(label)) },
+        text = { Text(stringResource(confirmText)) },
+        confirmButton = {
+            TextButton(onClick = { confirming = false; click() }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET),
+                colors = ButtonDefaults.textButtonColors(contentColor = if (kind == ActionKind.Destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)) { Text(stringResource(label)) }
+        },
+        dismissButton = {
+            TextButton(onClick = { confirming = false }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(R.string.confirm_dismiss)) }
+        },
+    )
 }

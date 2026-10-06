@@ -7,8 +7,6 @@ internal fun officeMemberId(state: JSONObject?, device: String): String? {
     val members = state?.optJSONObject("members") ?: return null
     return members.keys().asSequence().firstOrNull { id ->
         val member = members.getJSONObject(id)
-        member.optString("device") == device || member.optJSONArray("additional_devices")?.let { devices ->
-            (0 until devices.length()).any { devices.optString(it) == device }
-        } == true
+        member.optString("device") == device || member.optJSONArray("additional_devices").containsString(device)
     }
 }

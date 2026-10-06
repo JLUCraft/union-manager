@@ -20,7 +20,7 @@ internal fun officeTime(millis: Long): String = DateFormat.getDateTimeInstance(D
 @Composable
 private fun organizations(values: JSONArray?): String =
     if (values == null || values.length() == 0) stringResource(R.string.office_no_partners)
-    else (0 until values.length()).joinToString(stringResource(R.string.governance_separator)) { values.getString(it) }
+    else values.strings().joinToString(stringResource(R.string.governance_separator))
 
 @Composable
 internal fun EventDetails(event: JSONObject, signups: JSONArray?) {
@@ -69,8 +69,7 @@ internal fun FlowReview(flow: JSONObject, payload: JSONObject?, target: JSONObje
                     else -> R.string.office_unknown
                 }))
                 Text(review.getString("summary"))
-                val issues = review.getJSONArray("issues")
-                (0 until issues.length()).forEach { issue -> Text(issues.getString(issue)) }
+                review.getJSONArray("issues").strings().forEach { Text(it) }
             }
             if (!run.isNull("output")) IdentifierDetails(run.getString("output"))
         }

@@ -78,12 +78,12 @@ fun OfficeCard(state: JSONObject?, busy: Boolean, device: String, approvals: Boo
                     }
                     if (expandedEvent == eventId) {
                     val own = state.optJSONObject("members")?.optJSONObject(member.orEmpty())
-                    val admin = state.optJSONArray("admins")?.let { values -> (0 until values.length()).any { values.optString(it) == member } } == true
+                    val admin = state.optJSONArray("admins").containsString(member)
                     val manage = admin || event.optString("creator") == member ||
-                        (own?.optString("club") == event.optString("organizer") && own.optJSONArray("roles")?.let { values -> (0 until values.length()).any { values.optString(it) == "president" } } == true)
+                        (own?.optString("club") == event.optString("organizer") && own.optJSONArray("roles").containsString("president"))
                     OfficeRequestDetails(state, eventId, event, busy, manage && phase !in setOf("done", "cancelled"), send)
                     EventDetails(event, state.optJSONObject("signups")?.optJSONArray(eventId))
-                    if (manage && phase == "draft") OfficeButton(R.string.office_submit, enabled) { act("events.submit", "id", eventId) }
+                    if (manage && phase == "draft") ActionButton(R.string.office_submit, enabled) { act("events.submit", "id", eventId) }
                     if (manage && phase == "review") {
                         val flows = state.optJSONObject("flows")
                         val awaiting = flows?.keys()?.asSequence()?.any { flowId ->
@@ -98,7 +98,7 @@ fun OfficeCard(state: JSONObject?, busy: Boolean, device: String, approvals: Boo
                                 val template = templates.getJSONObject(templateId)
                                 val versions = template.optJSONArray("versions")
                                 val kinds = versions?.optJSONObject(versions.length() - 1)?.optJSONArray("payload_kinds")
-                                template.optBoolean("active") && kinds?.let { values -> (0 until values.length()).any { values.optString(it) == "events.approve" } } == true
+                                template.optBoolean("active") && kinds.containsString("events.approve")
                             }.toList()
                             var menu by remember { mutableStateOf(false) }
                             OutlinedButton(onClick = { menu = true }, enabled = enabled && available.isNotEmpty()) { Text(stringResource(R.string.office_request_approval)) }
@@ -117,17 +117,15 @@ fun OfficeCard(state: JSONObject?, busy: Boolean, device: String, approvals: Boo
                             if (available.isEmpty()) Text(stringResource(R.string.office_no_approval_template))
                         }
                     }
-                    if (manage && phase == "approved") OfficeButton(R.string.office_publish, enabled) { act("events.publish", "id", eventId) }
+                    if (manage && phase == "approved") ActionButton(R.string.office_publish, enabled) { act("events.publish", "id", eventId) }
                     if (phase == "open") {
-                        val signedUp = state.optJSONObject("signups")?.optJSONArray(eventId)?.let { entries ->
-                            (0 until entries.length()).any { entries.optString(it) == member }
-                        } == true
-                        OfficeButton(if (signedUp) R.string.office_cancel_signup else R.string.office_signup, enabled && member != null, if (signedUp) OfficeAction.Secondary else OfficeAction.Primary) {
+                        val signedUp = state.optJSONObject("signups")?.optJSONArray(eventId).containsString(member)
+                        ActionButton(if (signedUp) R.string.office_cancel_signup else R.string.office_signup, enabled && member != null, if (signedUp) ActionKind.Secondary else ActionKind.Primary) {
                             act(if (signedUp) "events.cancel" else "events.signup", "id", eventId)
                         }
-                        if (manage) OfficeButton(R.string.office_finish, enabled, OfficeAction.Secondary) { act("events.finish", "id", eventId) }
+                        if (manage) ActionButton(R.string.office_finish, enabled, ActionKind.Secondary) { act("events.finish", "id", eventId) }
                     }
-                    if (manage && phase !in setOf("done", "cancelled")) OfficeButton(R.string.office_cancel, enabled, OfficeAction.Destructive) { act("events.cancel_event", "id", eventId) }
+                    if (manage && phase !in setOf("done", "cancelled")) ActionButton(R.string.office_cancel, enabled, ActionKind.Destructive) { act("events.cancel_event", "id", eventId) }
                     }
                 }
             }
@@ -143,7 +141,7 @@ fun OfficeCard(state: JSONObject?, busy: Boolean, device: String, approvals: Boo
         val openTime = parseLocalDateTime(opens)
         val closeTime = parseLocalDateTime(closes)
         val startTime = parseLocalDateTime(starts)
-        OfficeButton(R.string.office_save_request, enabled && id.isNotBlank() && title.isNotBlank() && description.isNotBlank() &&
+        ActionButton(R.string.office_save_request, enabled && id.isNotBlank() && title.isNotBlank() && description.isNotBlank() &&
             openTime != null && closeTime != null && startTime != null && openTime >= 0 && openTime < closeTime && closeTime <= startTime) {
             send(JSONObject().put("type", "local.events.create").put("id", id).put("title", title).put("description", description).put("attachment", hash.ifBlank { null } ?: JSONObject.NULL)
                 .put("window", JSONObject().put("opens_ms", openTime).put("closes_ms", closeTime).put("starts_ms", startTime)))
@@ -186,30 +184,30 @@ fun OfficeCard(state: JSONObject?, busy: Boolean, device: String, approvals: Boo
                     val runs = flow.optJSONArray("records")?.optJSONObject(flow.optInt("current"))?.optJSONArray("ai_runs")
                     val last = runs?.optJSONObject(runs.length() - 1)
                     val retryable = last != null && !last.isNull("error") && last.isNull("output") && !last.optBoolean("retry_requested") && runs.length() < 8
-                    OfficeButton(R.string.office_ai_retry, enabled && retryable, OfficeAction.Secondary) { act("flows.retry_ai", "instance", flowId) }
-                    OfficeButton(R.string.office_poke, enabled, OfficeAction.Secondary) { act("flows.poke", "instance", flowId) }
+                    ActionButton(R.string.office_ai_retry, enabled && retryable, ActionKind.Secondary) { act("flows.retry_ai", "instance", flowId) }
+                    ActionButton(R.string.office_poke, enabled, ActionKind.Secondary) { act("flows.poke", "instance", flowId) }
                 }
                 if (status == "active" && !ai) {
                     var comment by rememberSaveable { mutableStateOf("") }
                     var delegate by rememberSaveable { mutableStateOf("") }
                     OfficeField(comment, R.string.office_comment, enabled) { comment = it.trim() }
-                    OfficeButton(R.string.office_approve, enabled && reviewable && comment.isNotBlank()) {
+                    ActionButton(R.string.office_approve, enabled && reviewable && comment.isNotBlank()) {
                         send(JSONObject().put("type", "local.flows.approve").put("instance", flowId).put("comment", comment))
                     }
-                    OfficeButton(R.string.office_reject, enabled && comment.isNotBlank(), OfficeAction.Destructive) {
+                    ActionButton(R.string.office_reject, enabled && comment.isNotBlank(), ActionKind.Destructive) {
                         send(JSONObject().put("type", "local.flows.reject").put("instance", flowId).put("comment", comment))
                     }
                     var delegating by rememberSaveable { mutableStateOf(false) }
                     TextButton(onClick = { delegating = !delegating }) { Text(stringResource(R.string.office_delegate)) }
                     if (delegating) {
                     OfficeField(delegate, R.string.office_delegate_member, enabled) { delegate = it }
-                    OfficeButton(R.string.office_delegate, enabled && delegate.isNotBlank()) {
+                    ActionButton(R.string.office_delegate, enabled && delegate.isNotBlank()) {
                         send(JSONObject().put("type", "flows.delegate").put("instance", flowId).put("to", delegate))
                     }
                     }
                 }
-                if (status == "approved") OfficeButton(R.string.office_execute, enabled && reviewable) { act("flows.execute", "instance", flowId) }
-                if (status in setOf("active", "approved")) OfficeButton(R.string.office_cancel_flow, enabled, OfficeAction.Destructive) { act("flows.cancel", "instance", flowId) }
+                if (status == "approved") ActionButton(R.string.office_execute, enabled && reviewable) { act("flows.execute", "instance", flowId) }
+                if (status in setOf("active", "approved")) ActionButton(R.string.office_cancel_flow, enabled, ActionKind.Destructive) { act("flows.cancel", "instance", flowId) }
                 }
                 }
             }
@@ -222,33 +220,4 @@ private fun OfficeField(value: String, label: Int, enabled: Boolean, hint: Int? 
     OutlinedTextField(value = value, onValueChange = change, label = { Text(stringResource(label)) },
         enabled = enabled, singleLine = true, supportingText = hint?.let { { Text(stringResource(it)) } },
         modifier = Modifier.fillMaxWidth())
-}
-internal enum class OfficeAction { Primary, Secondary, Destructive }
-
-@Composable
-private fun OfficeButton(label: Int, enabled: Boolean, kind: OfficeAction = OfficeAction.Primary, click: () -> Unit) {
-    var confirming by remember { mutableStateOf(false) }
-    val modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET)
-    val onClick = if (kind == OfficeAction.Destructive) ({ confirming = true }) else click
-    when (kind) {
-        OfficeAction.Primary -> Button(onClick = onClick, enabled = enabled, modifier = modifier) { Text(stringResource(label)) }
-        OfficeAction.Secondary -> OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier) { Text(stringResource(label)) }
-        OfficeAction.Destructive -> OutlinedButton(
-            onClick = onClick, enabled = enabled, modifier = modifier,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = if (enabled) 1f else DISABLED_BORDER_ALPHA)),
-        ) { Text(stringResource(label)) }
-    }
-    if (confirming) AlertDialog(
-        onDismissRequest = { confirming = false },
-        title = { Text(stringResource(label)) },
-        text = { Text(stringResource(R.string.confirm_irreversible)) },
-        confirmButton = {
-            TextButton(onClick = { confirming = false; click() }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET),
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(label)) }
-        },
-        dismissButton = {
-            TextButton(onClick = { confirming = false }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(R.string.confirm_dismiss)) }
-        },
-    )
 }
