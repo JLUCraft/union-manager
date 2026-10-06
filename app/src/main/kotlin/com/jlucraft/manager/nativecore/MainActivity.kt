@@ -228,7 +228,7 @@ class MainActivity : ComponentActivity() {
                         scope.launch(start = CoroutineStart.UNDISPATCHED) {
                             try {
                                 val response = withContext(Dispatchers.IO) {
-                                    try { JSONObject(if (identityOperation && input.optString("operation") == "sign_offline") UnionNative.signIdentityRecord(material, input.getJSONObject("record").toString()) else if (identityOperation) UnionNative.executeIdentity(material, input.toString()) else UnionNative.executeOps(material, input.toString())) }
+                                    try { JSONObject(if (identityOperation && input.optString("operation") == "sign_offline") UnionNative.signIdentityOffline(material, JSONObject().put("config", input.getJSONObject("config")).put("record", input.getJSONObject("record")).toString()) else if (identityOperation) UnionNative.executeIdentity(material, input.toString()) else UnionNative.executeOps(material, input.toString())) }
                                     finally { material.fill(0) }
                                 }
                                 if (lockEpoch == epoch && unlocked) reply(response)

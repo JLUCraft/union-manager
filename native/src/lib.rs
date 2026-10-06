@@ -305,20 +305,43 @@ fn bounded_identity_text(env: &mut JNIEnv<'_>, input: &JString<'_>) -> Result<St
     Ok(text)
 }
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_signIdentityRecord(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_management(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    input: JString<'_>,
+) -> jstring {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let text = bounded_identity_text(&mut env, &input)?;
+        let request = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let result = ::client::management::execute(request).map_err(|e| e.to_string())?;
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }))
+    .unwrap_or_else(|_| Err("Native management operation failed".into()));
+    reply(&mut env, result)
+}
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_signIdentityOffline(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     secret: JByteArray<'_>,
-    record: JString<'_>,
+    input: JString<'_>,
 ) -> jstring {
     let result = catch_unwind(AssertUnwindSafe(|| {
-        let text = bounded_identity_text(&mut env, &record)?;
-        if text.len() > MAX_REQUEST_BYTES {
-            return Err("Identity record too large".into());
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Input {
+            config: ::client::trust::Config,
+            record: ::client::trust::TrustRecord,
         }
-        let mut record = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-        ::client::trust::sign(&mut record, &identity(&env, &secret)?).map_err(|e| e.to_string())?;
-        serde_json::to_string(&record).map_err(|e| e.to_string())
+        let text = bounded_identity_text(&mut env, &input)?;
+        let input: Input = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let result = ::client::management::sign_offline(
+            &identity(&env, &secret)?,
+            &input.config,
+            input.record,
+        )
+        .map_err(|e| e.to_string())?;
+        serde_json::to_string(&result).map_err(|e| e.to_string())
     }))
     .unwrap_or_else(|_| Err("Native identity operation failed".into()));
     reply(&mut env, result)

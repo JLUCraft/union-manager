@@ -18,17 +18,21 @@ class IdentityProtocolTest {
         .put("previous", previous).put("action", action).put("signatures", JSONArray())
     private fun review(genesis: JSONObject, pin: String, records: JSONArray): JSONObject = JSONObject(
         UnionNative.reviewIdentityHistory(JSONObject().put("genesis", genesis).put("genesis_hash", pin).put("records", records).toString()))
+    private fun sign(secret: ByteArray, genesis: JSONObject, pin: String, record: String): String {
+        val config = JSONObject().put("genesis", genesis).put("genesis_hash", pin).put("address", "").put("peer", "")
+        return UnionNative.signIdentityOffline(secret, JSONObject().put("config", config).put("record", JSONObject(record)).toString())
+    }
     @Test fun actualJniVerifiesDeviceReplacementWithoutChangingPerson() {
         val old = UnionNative.generateSecret(); val next = UnionNative.generateSecret()
         try {
             val genesis = genesis(old); val pin = digest(genesis)
             val binding = record(pin, 1, pin, JSONObject().put("type", "bind_device").put("member", "stable-person").put("device", UnionNative.peerId(next)))
-            val signed = JSONObject(UnionNative.signIdentityRecord(next, UnionNative.signIdentityRecord(old, binding.toString())))
+            val signed = JSONObject(sign(next, genesis, pin, sign(old, genesis, pin, binding.toString())))
             val records = JSONArray().put(signed); val state = review(genesis, pin, records)
             assertEquals("stable-person", identityMember(state, UnionNative.peerId(next))?.memberId)
             val revoke = record(pin, 2, state.getJSONObject("checkpoint").getString("head"), JSONObject()
                 .put("type", "revoke_device").put("member", "stable-person").put("device", UnionNative.peerId(old)))
-            records.put(JSONObject(UnionNative.signIdentityRecord(next, revoke.toString())))
+            records.put(JSONObject(sign(next, genesis, pin, revoke.toString())))
             val updated = review(genesis, pin, records)
             assertNull(identityMember(updated, UnionNative.peerId(old)))
             assertEquals(setOf("test-club"), identityMember(updated, UnionNative.peerId(next))?.chairOf)
@@ -39,10 +43,10 @@ class IdentityProtocolTest {
         try {
             val genesis = genesis(secret); val pin = digest(genesis)
             val action = JSONObject().put("type", "revoke_membership").put("member", "stable-person").put("club", "test-club")
-            val signed = JSONObject(UnionNative.signIdentityRecord(secret, record(pin, 1, pin, action).toString())).put("previous", "0".repeat(64))
+            val signed = JSONObject(sign(secret, genesis, pin, record(pin, 1, pin, action).toString())).put("previous", "0".repeat(64))
             assertThrows(IllegalStateException::class.java) { review(genesis, pin, JSONArray().put(signed)) }
             action.put("expires_at", 1)
-            assertThrows(IllegalStateException::class.java) { UnionNative.signIdentityRecord(secret, record(pin, 1, pin, action).toString()) }
+            assertThrows(IllegalStateException::class.java) { sign(secret, genesis, pin, record(pin, 1, pin, action).toString()) }
         } finally { secret.fill(0) }
     }
     @Test fun placeholderGenesisIsNeverTrusted() {
