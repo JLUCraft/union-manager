@@ -62,7 +62,6 @@ class BiometricVault(private val activity: Activity) {
             } else null
             if (envelope == null) cipher.init(Cipher.ENCRYPT_MODE, key)
             else cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, envelope.copyOfRange(1, 13)))
-            cipher.updateAAD("jlucraft-manager-identity-v1".toByteArray(Charsets.UTF_8))
             val signal = CancellationSignal()
             pending = signal
             BiometricPrompt.Builder(activity)
@@ -83,6 +82,8 @@ class BiometricVault(private val activity: Activity) {
                             var secret: ByteArray? = null
                             try {
                                 val unlocked = checkNotNull(result.cryptoObject?.cipher)
+                                // Per-use keys cannot process AAD until this operation has an auth token.
+                                unlocked.updateAAD("jlucraft-manager-identity-v1".toByteArray(Charsets.UTF_8))
                                 val material = if (envelope != null) unlocked.doFinal(envelope.copyOfRange(13, envelope.size))
                                     else UnionNative.generateSecret()
                                 secret = material
