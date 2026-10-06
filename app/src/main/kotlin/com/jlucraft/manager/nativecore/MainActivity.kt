@@ -12,7 +12,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
-import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -99,6 +98,8 @@ class MainActivity : ComponentActivity() {
                 var identityConfiguration by remember { mutableStateOf(preferences.getString("identity_configuration", "") ?: "") }
                 val identityDirectory = java.io.File(noBackupFilesDir, "identity")
                 var identity by remember { mutableStateOf("") }
+                var publicIdentity by remember { mutableStateOf("") }
+                var firstRun by remember { mutableStateOf(!vault.hasIdentity()) }
                 var state by remember { mutableStateOf<JSONObject?>(null) }
                 var office by remember { mutableStateOf(intent.hasExtra("office_notice") || preferences.getBoolean("office", true)) }
                 var busy by remember { mutableStateOf(false) }
@@ -131,7 +132,7 @@ class MainActivity : ComponentActivity() {
                     topBackStack.clear()
                     topBackStack.add(if (toOffice) OfficeRoot else LeagueHome)
                 }
-                LaunchedEffect(lockEpoch) { state = null; busy = false; identity = "" }
+                LaunchedEffect(lockEpoch) { state = null; busy = false; identity = ""; publicIdentity = "" }
                 LaunchedEffect(focusedNotice) {
                     if (focusedNotice != null) {
                         selectMode(true)
@@ -144,6 +145,8 @@ class MainActivity : ComponentActivity() {
                     busy = true
                     vault.authenticate(getString(R.string.unlock_management), { secret ->
                         identity = UnionNative.peerId(secret)
+                        publicIdentity = devicePublicIdentity(secret)
+                        firstRun = false
                         unlocked = true
                         busy = false
                         message = ""
@@ -247,6 +250,8 @@ class MainActivity : ComponentActivity() {
                     })
                 }
                 val connectionContent: @Composable () -> Unit = {
+                    SetupChecklist(identityReady = publicIdentity.isNotBlank(), configured = identityConfiguration.isNotBlank(), connected = state != null)
+                    DeviceIdentityCard(publicIdentity)
                     IdentityCard(identityConfiguration, identity, busy, identityDirectory, { value ->
                         identityConfiguration = value
                         preferences.edit().putString("identity_configuration", value).apply()
@@ -297,6 +302,12 @@ class MainActivity : ComponentActivity() {
                                 Text(
                                     stringResource(R.string.management_locked),
                                     style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                )
+                                if (firstRun) Text(
+                                    stringResource(R.string.management_first_run),
+                                    style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center,
                                 )

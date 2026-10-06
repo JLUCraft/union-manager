@@ -22,6 +22,8 @@ class BiometricVault(private val activity: Activity) {
     private var pending: CancellationSignal? = null
     private var generation = 0L
 
+    fun hasIdentity(): Boolean = stored.baseFile.exists() || File(stored.baseFile.path + ".bak").exists()
+
     fun cancel() {
         generation++
         pending?.cancel()
