@@ -49,6 +49,20 @@ class IdentityProtocolTest {
             assertThrows(IllegalStateException::class.java) { sign(secret, genesis, pin, record(pin, 1, pin, action).toString()) }
         } finally { secret.fill(0) }
     }
+    @Test fun nativeLocalInspectionDoesNotRequireNetworkOrClaimCurrentness() {
+        val secret = UnionNative.generateSecret()
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = java.io.File(context.cacheDir, "identity-inspect-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        try {
+            val root = genesis(secret)
+            val reviewed = JSONObject(UnionNative.management(JSONObject().put("operation", "review_genesis").put("genesis", root).toString()))
+            val config = JSONObject(reviewed.toString()).put("address", "offline").put("peer", "offline").put("log", java.io.File(directory, "history.jsonl").absolutePath)
+            val state = JSONObject(UnionNative.executeIdentity(secret, JSONObject().put("operation", "inspect").put("config", config).toString()))
+            assertEquals(0L, state.getJSONObject("checkpoint").getLong("sequence"))
+            assertEquals(reviewed.getString("genesis_hash"), state.getJSONObject("checkpoint").getString("genesis"))
+            assertEquals(IdentityAvailability.Cached, IdentityState().received(identityMember(state, UnionNative.peerId(secret)), current = false).availability)
+        } finally { secret.fill(0); directory.deleteRecursively() }
+    }
     @Test fun placeholderGenesisIsNeverTrusted() {
         val genesis = JSONObject().put("federation", "placeholder").put("quorum", 1)
             .put("founders", JSONArray().put(JSONObject().put("member", "placeholder").put("club", "placeholder").put("public_key", JSONArray())))

@@ -20,4 +20,8 @@ class IdentityStateTest {
         assertEquals(setOf("club"), state.member.chairOf)
         assertEquals(setOf("server: manage"), state.member.permissions)
     }
+    @org.junit.Test fun cachedHistoryNeverClaimsCurrentAuthority() {
+        val cached = IdentityState().received(null, current = false)
+        org.junit.Assert.assertEquals(IdentityAvailability.Cached, cached.availability)
+    }
 }

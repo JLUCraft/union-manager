@@ -1,20 +1,21 @@
 package com.jlucraft.manager.nativecore
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.jlucraft.manager.R
 import org.json.JSONObject
-import org.json.JSONArray
 import java.io.File
 
 internal fun identityConfig(text: String, directory: File): JSONObject {
     val config = JSONObject(text)
     val pin = config.getString("genesis_hash")
-    require(pin.matches(Regex("[a-f0-9]{64}")))
+    require(GENESIS_HASH_PATTERN.matches(pin))
     require(config.getString("address").isNotBlank() && config.getString("peer").isNotBlank())
     config.getJSONObject("genesis")
     require(directory.isDirectory || directory.mkdirs())
@@ -23,49 +24,54 @@ internal fun identityConfig(text: String, directory: File): JSONObject {
 internal fun identityMember(state: JSONObject, device: String): MemberIdentityView? {
     val members = state.getJSONObject("members")
     val id = members.keys().asSequence().firstOrNull { id ->
-        members.getJSONArray(id).strings().contains(device)
+        device in members.getJSONArray(id).strings()
     } ?: return null
     val clubs = state.getJSONArray("memberships").let { values ->
         (0 until values.length()).map { values.getJSONArray(it) }.filter { it.getString(0) == id }.map { it.getString(1) }.toSet()
     }
     val chairs = state.getJSONObject("chairs")
     val permissions = state.getJSONObject("permissions")
-    return MemberIdentityView(id, members.getJSONArray(id).strings(), clubs,
+    return MemberIdentityView(id, members.getJSONArray(id).strings().toSet(), clubs,
         chairs.keys().asSequence().filter { chairs.getString(it) == id }.toSet(),
         permissions.keys().asSequence().map { permissions.getJSONObject(it) }
             .filter { it.getString("member") == id && !it.getBoolean("revoked") }
             .map { "${it.getString("service")}: ${it.getString("permission")}" }.toSet())
 }
-private fun JSONArray.strings(): Set<String> = (0 until length()).map { getString(it) }.toSet()
 
 @Composable
 internal fun IdentityCard(
     config: String, device: String, busy: Boolean, directory: File,
     onConfig: (String) -> Unit,
+    proposalState: MutableState<String> = rememberSaveable { mutableStateOf("") },
     execute: (JSONObject, (JSONObject) -> Unit) -> Unit,
 ) {
     var configuration by remember(config) { mutableStateOf(config) }
-    var proposal by remember { mutableStateOf("") }
+    var proposal by proposalState
     var state by remember(config, device) { mutableStateOf(IdentityState()) }
+    var facts by remember(config, device) { mutableStateOf<JSONObject?>(null) }
     var invalid by remember { mutableStateOf(false) }
-    fun run(operation: String) {
+    var proposalInvalid by remember { mutableStateOf(false) }
+    // Raw settings and records are advanced material; the summary is what an operator reviews.
+    var showConfiguration by rememberSaveable { mutableStateOf(false) }
+    var showProposal by rememberSaveable { mutableStateOf(false) }
+    fun run(operation: String, action: JSONObject? = null) {
         try {
             val input = JSONObject().put("config", identityConfig(config, directory)).put("operation", operation)
-            if (operation == "draft") input.put("action", JSONObject(proposal))
+            if (operation == "draft") input.put("action", action ?: JSONObject(proposal))
             if (operation == "sign" || operation == "sign_offline" || operation == "submit") input.put("record", JSONObject(proposal))
             val previous = state
-            state = state.syncing(); invalid = false
+            state = state.syncing(); proposalInvalid = false
             execute(input) { result ->
                 if (result.has("error")) state = state.failed()
                 else if (operation == "draft" || operation == "sign" || operation == "sign_offline") {
                     proposal = result.toString(2)
                     state = previous
                 } else {
-                    try { state = state.received(identityMember(result, device)) }
+                    try { state = state.received(identityMember(result, device), operation != "inspect"); facts = result }
                     catch (_: Exception) { state = state.failed() }
                 }
             }
-        } catch (_: Exception) { invalid = true }
+        } catch (_: Exception) { proposalInvalid = true }
     }
     ManagerCard(
         title = stringResource(R.string.identity_title),
@@ -73,33 +79,97 @@ internal fun IdentityCard(
         statusText = stringResource(when (state.availability) {
             IdentityAvailability.Unconfigured -> R.string.identity_empty
             IdentityAvailability.Syncing -> R.string.identity_syncing
+            IdentityAvailability.Cached -> R.string.identity_cached
             IdentityAvailability.Current -> R.string.identity_current
             IdentityAvailability.Unavailable -> R.string.identity_state_unavailable
         }),
         statusActive = state.availability == IdentityAvailability.Current,
     ) {
-        OutlinedTextField(configuration, { configuration = it }, label = { Text(stringResource(R.string.identity_configuration)) }, enabled = !busy, modifier = Modifier.fillMaxWidth())
-        Button(modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET), onClick = {
-            try { onConfig(identityConfig(configuration, directory).toString()); invalid = false }
-            catch (_: Exception) { invalid = true }
-        }, enabled = !busy) { Text(stringResource(R.string.identity_save)) }
-        Button(modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET), onClick = { run("sync") }, enabled = !busy && config.isNotBlank()) { Text(stringResource(R.string.identity_sync)) }
+        if (config.isBlank() || showConfiguration) {
+            OutlinedTextField(configuration, { configuration = it; invalid = false }, label = { Text(stringResource(R.string.identity_configuration)) }, enabled = !busy, isError = invalid,
+                supportingText = if (invalid) ({ Text(stringResource(R.string.identity_invalid)) }) else null, modifier = Modifier.fillMaxWidth())
+            ActionButton(R.string.identity_save, !busy) {
+                try {
+                    val verified = UnionNative.management(JSONObject().put("operation", "review_configuration").put("config", JSONObject(configuration)).toString())
+                    onConfig(identityConfig(verified, directory).toString()); invalid = false
+                }
+                catch (_: Exception) { invalid = true }
+            }
+        }
+        if (config.isNotBlank()) TextButton(onClick = { showConfiguration = !showConfiguration }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
+            Text(stringResource(if (showConfiguration) R.string.identity_hide_configuration else R.string.identity_show_configuration))
+        }
+        ActionButton(R.string.identity_inspect, !busy && config.isNotBlank(), ActionKind.Secondary) { run("inspect") }
+        ActionButton(R.string.identity_sync, !busy && config.isNotBlank(), ActionKind.Secondary) { run("sync") }
         if (state.availability == IdentityAvailability.Unavailable) {
             Text(stringResource(R.string.identity_unavailable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         state.member?.let { member ->
+            Text(stringResource(R.string.identity_my_member), style = MaterialTheme.typography.labelMedium)
             IdentifierDetails(member.memberId)
+            Text(stringResource(R.string.identity_my_clubs), style = MaterialTheme.typography.labelMedium)
             IdentifierDetails(member.clubs.joinToString())
-            Text(stringResource(R.string.identity_chairs, member.chairOf.joinToString()))
-            Text(stringResource(R.string.identity_permissions, member.permissions.joinToString()))
+            val none = stringResource(R.string.identity_none)
+            Text(stringResource(R.string.identity_chairs, member.chairOf.joinToString().ifEmpty { none }))
+            Text(stringResource(R.string.identity_permissions, member.permissions.joinToString().ifEmpty { none }))
         }
         if (state.availability == IdentityAvailability.Current && state.member == null) Text(stringResource(R.string.identity_unbound))
-        OutlinedTextField(proposal, { proposal = it }, label = { Text(stringResource(R.string.identity_proposal)) }, enabled = !busy, modifier = Modifier.fillMaxWidth())
+        facts?.let { value ->
+            Text(stringResource(R.string.identity_verified_facts), style = MaterialTheme.typography.titleSmall)
+            IdentifierDetails(remember(value) { value.toString(2) }, R.string.identity_show_facts)
+        }
+        IdentityActionForm(!busy && config.isNotBlank()) { action -> run("draft", action) }
+        TextButton(onClick = { showProposal = !showProposal }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
+            Text(stringResource(if (showProposal) R.string.identity_hide_proposal else R.string.identity_show_proposal))
+        }
+        if (showProposal) OutlinedTextField(proposal, { proposal = it; proposalInvalid = false }, label = { Text(stringResource(R.string.identity_proposal)) }, enabled = !busy, isError = proposalInvalid,
+            modifier = Modifier.fillMaxWidth())
+        if (proposalInvalid) Text(stringResource(R.string.identity_proposal_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         Text(stringResource(R.string.identity_review), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Button(modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET), onClick = { run("draft") }, enabled = !busy && config.isNotBlank() && proposal.isNotBlank()) { Text(stringResource(R.string.identity_draft)) }
-        Button(modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET), onClick = { run("sign") }, enabled = !busy && config.isNotBlank() && proposal.isNotBlank()) { Text(stringResource(R.string.identity_sign)) }
-        Button(modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET), onClick = { run("sign_offline") }, enabled = !busy && config.isNotBlank() && proposal.isNotBlank()) { Text(stringResource(R.string.identity_sign_offline)) }
-        Button(modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET), onClick = { run("submit") }, enabled = !busy && config.isNotBlank() && proposal.isNotBlank()) { Text(stringResource(R.string.identity_submit)) }
-        if (invalid) Text(stringResource(R.string.identity_invalid), color = MaterialTheme.colorScheme.error)
+        if (proposal.isNotBlank()) {
+            ProposalSummary(proposal)
+            PublicJsonActions(proposal, R.string.identity_proposal, !busy)
+        }
+        val ready = !busy && config.isNotBlank() && proposal.isNotBlank()
+        ActionButton(R.string.identity_draft, ready, ActionKind.Secondary) { run("draft") }
+        ActionButton(R.string.identity_sign, ready, ActionKind.Secondary) { run("sign") }
+        ActionButton(R.string.identity_sign_offline, ready, ActionKind.Secondary) { run("sign_offline") }
+        ActionButton(R.string.identity_submit, ready, ActionKind.Confirmed, R.string.identity_submit_confirm) { run("submit") }
+    }
+}
+
+/** A readable digest of a drafted record, so the raw JSON is not the only thing a chair reviews before signing. */
+@Composable
+internal fun ProposalSummary(proposal: String) {
+    val record = remember(proposal) { runCatching { JSONObject(proposal) }.getOrNull() } ?: return
+    val action = record.optJSONObject("action") ?: return
+    val type = action.optString("type")
+    Text(stringResource(R.string.identity_summary_title), style = MaterialTheme.typography.titleSmall)
+    Text(stringResource(identityActionLabel(type)), style = MaterialTheme.typography.titleMedium)
+    for (name in action.keys().asSequence().filter { it != "type" }.toList()) {
+        val text = summaryValue(action.opt(name)) ?: continue
+        if (text.isBlank() || identityFieldLabel(name) == R.string.identity_invalid) continue
+        Text(stringResource(identityFieldLabel(name)), style = MaterialTheme.typography.labelMedium)
+        SelectionContainer { Text(text, style = MaterialTheme.typography.bodyMedium) }
+    }
+    Text(stringResource(R.string.identity_signature_count, record.optJSONArray("signatures")?.length() ?: 0), style = MaterialTheme.typography.bodySmall)
+}
+
+/** A field value as an operator reads it: evidence kinds use their plain names, never wire identifiers. */
+@Composable
+private fun summaryValue(value: Any?): String? {
+    val parts = when (value) {
+        is org.json.JSONArray -> (0 until value.length()).map { value.get(it).toString() }
+        null, JSONObject.NULL -> return null
+        else -> listOf(value.toString())
+    }
+    val email = stringResource(R.string.identity_evidence_email)
+    val profile = stringResource(R.string.identity_evidence_profile)
+    return parts.joinToString("、") { part ->
+        when (part) {
+            "institutional_email" -> email
+            "game_profile" -> profile
+            else -> part
+        }
     }
 }

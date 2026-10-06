@@ -101,6 +101,7 @@ class MainActivity : ComponentActivity() {
                 var identity by remember { mutableStateOf("") }
                 var publicIdentity by remember { mutableStateOf("") }
                 var genesisDraft by rememberSaveable { mutableStateOf("") }
+                val identityProposal = rememberSaveable { mutableStateOf("") }
                 var firstRun by remember { mutableStateOf(!vault.hasIdentity()) }
                 var state by remember { mutableStateOf<JSONObject?>(null) }
                 var office by remember { mutableStateOf(intent.hasExtra("office_notice") || preferences.getBoolean("office", true)) }
@@ -210,7 +211,7 @@ class MainActivity : ComponentActivity() {
                                     message = if (action == null) getString(R.string.management_synced) else getString(R.string.management_done)
                                 }
                             } catch (error: Exception) {
-                                if (lockEpoch == requestEpoch) message = getString(if (error is NativeFailure && error.code == "authority_unavailable") R.string.identity_unavailable else R.string.management_failed)
+                                if (lockEpoch == requestEpoch) message = getString(failureMessageRes(error))
                             } finally {
                                 material.fill(0)
                                 if (lockEpoch == requestEpoch) busy = false
@@ -258,7 +259,8 @@ class MainActivity : ComponentActivity() {
                         identityConfiguration = value
                         preferences.edit().putString("identity_configuration", value).apply()
                         state = null
-                    }) { input, reply -> executeOps(input, reply, true) }
+                        message = getString(R.string.identity_saved)
+                    }, proposalState = identityProposal) { input, reply -> executeOps(input, reply, true) }
                     ConnectionCard(
                         address = address,
                         peer = peer,
