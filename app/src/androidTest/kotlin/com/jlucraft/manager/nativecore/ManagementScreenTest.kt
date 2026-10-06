@@ -42,4 +42,22 @@ class ManagementScreenTest {
             assertEquals("test-school", result?.getString("club"))
         }
     }
+    @Test fun founderEditorExportsValidatedServerManifestWithoutSecrets() {
+        val secret = UnionNative.generateSecret()
+        val public = try { devicePublicIdentity(secret) } finally { secret.fill(0) }
+        var draft by mutableStateOf(JSONObject().put("federation", "screen-test").put("quorum", "1")
+            .put("founders", JSONArray().put(JSONObject().put("row_id", "row").put("member", "founder").put("club", "school").put("identity", public))).toString())
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { GenesisBuilderCard(draft) { draft = it } } } }
+        node(R.string.genesis_builder_open).performClick()
+        node(R.string.genesis_validate).performScrollTo().performClick()
+        node(R.string.identity_export_copy).performScrollTo().performClick()
+        compose.runOnIdle {
+            val exported = context.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString()
+            val value = JSONObject(exported)
+            assertEquals(setOf("federation", "founders", "quorum"), value.keys().asSequence().toSet())
+            val reviewed = JSONObject(UnionNative.management(JSONObject().put("operation", "review_genesis").put("genesis", value).toString()))
+            assertEquals(64, reviewed.getString("genesis_hash").length)
+            assertEquals("founder", value.getJSONArray("founders").getJSONObject(0).getString("member"))
+        }
+    }
 }

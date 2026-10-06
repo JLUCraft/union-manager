@@ -40,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -99,6 +100,7 @@ class MainActivity : ComponentActivity() {
                 val identityDirectory = java.io.File(noBackupFilesDir, "identity")
                 var identity by remember { mutableStateOf("") }
                 var publicIdentity by remember { mutableStateOf("") }
+                var genesisDraft by rememberSaveable { mutableStateOf("") }
                 var firstRun by remember { mutableStateOf(!vault.hasIdentity()) }
                 var state by remember { mutableStateOf<JSONObject?>(null) }
                 var office by remember { mutableStateOf(intent.hasExtra("office_notice") || preferences.getBoolean("office", true)) }
@@ -275,6 +277,7 @@ class MainActivity : ComponentActivity() {
                             connectAfterLink = true
                         },
                     )
+                    GenesisBuilderCard(genesisDraft) { genesisDraft = it }
                 }
                 val seatsValid = (seats.toIntOrNull() ?: 0) > 0
                 Surface(Modifier.fillMaxSize()) {

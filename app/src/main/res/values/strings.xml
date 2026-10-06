@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="genesis_hash_label">初始状态 SHA-256（向组织者核实）</string>
+    <string name="genesis_hash_label">联盟校验码（向组织者核实）</string>
     <string name="assistant_service">服务 ID</string>
     <string name="mode_league">联赛</string>
     <string name="mode_office">协作办公</string>
@@ -408,5 +408,19 @@
     <string name="identity_field_quorum">所需签署人数</string>
     <string name="identity_field_chairs">新一届社长席位</string>
     <string name="identity_field_evidence">自动验证范围</string>
+    <string name="identity_export_copy">复制</string>
+    <string name="identity_export_share">分享</string>
+    <string name="genesis_builder_title">创建联盟创始名单</string>
+    <string name="genesis_builder_helper">首次部署前收集各创始人的公开身份，并共同确认成员、社团和所需签署人数。名单确定后，后续换届通过身份记录完成，不再修改名单。</string>
+    <string name="genesis_builder_open">编辑创始名单</string>
+    <string name="genesis_builder_hide">收起</string>
+    <string name="genesis_federation">联盟 ID</string>
+    <string name="genesis_founder_public">导入创始人的公开身份</string>
+    <string name="genesis_founder_public_hint">粘贴创始人导出的“本机公开身份”，其中不含私钥。</string>
+    <string name="genesis_add_founder">添加创始人</string>
+    <string name="genesis_remove_founder">移除此创始人</string>
+    <string name="genesis_validate">检查并生成名单</string>
+    <string name="genesis_invalid">创始名单无效：请检查每位创始人的身份是否填写正确、社团是否重复，以及所需签署人数是否超过创始成员的一半。</string>
+    <string name="genesis_review">请展开核对完整名单；复制或分享的名单可交给服务器管理员使用。</string>
     <string name="identity_generate_id">生成新 ID</string>
 </resources>
