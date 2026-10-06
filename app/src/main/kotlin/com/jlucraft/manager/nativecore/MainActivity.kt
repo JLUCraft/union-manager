@@ -116,7 +116,7 @@ class MainActivity : ComponentActivity() {
                 var scorer by remember { mutableStateOf("") }
                 var officeDestination by remember { mutableStateOf(OfficeDestination.Requests) }
                 val topBackStack = rememberNavBackStack(if (office) OfficeRoot else LeagueHome)
-                fun savedTarget(prefix: String, fallback: Boolean) = ManagementTarget(
+                fun savedTarget(prefix: String, fallback: Boolean) = ConnectionTarget(
                     preferences.getString("${prefix}_address", if (fallback) address else "") ?: "",
                     preferences.getString("${prefix}_peer", if (fallback) peer else "") ?: "",
                     preferences.getString("${prefix}_genesis", if (fallback) genesisHash else "") ?: "",
@@ -125,7 +125,7 @@ class MainActivity : ComponentActivity() {
                 var officeTarget by remember { mutableStateOf(savedTarget("office", office)) }
                 fun selectMode(toOffice: Boolean) {
                     if (office == toOffice || busy) return
-                    val current = ManagementTarget(address, peer, genesisHash)
+                    val current = ConnectionTarget(address, peer, genesisHash)
                     if (office) officeTarget = current else leagueTarget = current
                     val next = if (toOffice) officeTarget else leagueTarget
                     address = next.address
@@ -274,6 +274,8 @@ class MainActivity : ComponentActivity() {
                         onGenesisChange = { genesisHash = it.trim(); state = null },
                         onConnect = { request() },
                         onLink = { target ->
+                            // The shared federation link addresses the launcher's league service.
+                            selectMode(false)
                             address = target.address; peer = target.peer; genesisHash = target.genesisHash
                             state = null
                             connectAfterLink = true
@@ -452,5 +454,3 @@ class MainActivity : ComponentActivity() {
 
 @Serializable internal data object LeagueHome : NavKey
 @Serializable internal data object OfficeRoot : NavKey
-
-private data class ManagementTarget(val address: String, val peer: String, val genesisHash: String)

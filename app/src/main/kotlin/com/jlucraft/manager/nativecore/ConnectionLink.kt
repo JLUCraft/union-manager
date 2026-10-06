@@ -9,13 +9,18 @@ internal const val CONNECTION_LINK_SCHEME = "folly"
 internal val GENESIS_HASH_PATTERN = Regex("[a-f0-9]{64}")
 private const val CONNECTION_LINK_HOST = "federation"
 
-/** Parses `folly://federation?address=…&peer=…&genesis=…`, the link an organizer hands to members. */
+/** Parses `folly://federation?address=…&peer=…&genesis=…`, the league link an organizer hands to members. */
 internal fun parseConnectionLink(text: String): ConnectionTarget? = runCatching {
     val uri = URI(text.trim())
-    if (uri.scheme != CONNECTION_LINK_SCHEME || uri.host != CONNECTION_LINK_HOST) return@runCatching null
-    val query = uri.rawQuery.orEmpty().split('&').filter { it.contains('=') }.associate {
-        val (key, value) = it.split('=', limit = 2)
-        key to URLDecoder.decode(value, Charsets.UTF_8)
+    if (uri.scheme != CONNECTION_LINK_SCHEME || uri.rawAuthority != CONNECTION_LINK_HOST ||
+        (uri.rawPath != "" && uri.rawPath != "/")
+    ) return@runCatching null
+    val query = mutableMapOf<String, String>()
+    uri.rawQuery.orEmpty().split('&').forEach {
+        val pair = it.split('=', limit = 2)
+        val key = URLDecoder.decode(pair[0], Charsets.UTF_8)
+        // Match URLSearchParams.get: decode names and retain the first value.
+        query.putIfAbsent(key, URLDecoder.decode(pair.getOrElse(1) { "" }, Charsets.UTF_8))
     }
     val address = query["address"]?.takeIf { it.isNotBlank() } ?: return@runCatching null
     val peer = query["peer"]?.takeIf { it.isNotBlank() } ?: return@runCatching null
