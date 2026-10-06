@@ -49,6 +49,17 @@ class UnionNativeTest {
             assertEquals("invalid_request", office.getString("error_code"))
         } finally { secret.fill(0) }
     }
+    @Test fun replicaNodeIdsRemainExactAcrossJsonAndJni() {
+        val secret = UnionNative.generateSecret()
+        try {
+            val peer = UnionNative.peerId(secret)
+            val id = "18446744073709551615"
+            val input = org.json.JSONObject().put("operation", "build_consensus").put("members", org.json.JSONArray().put(org.json.JSONObject().put("id", id)
+                .put("node", org.json.JSONObject().put("peer", peer).put("addresses", org.json.JSONArray().put("/ip4/127.0.0.1/tcp/4001/p2p/$peer")))))
+            val action = org.json.JSONObject(UnionNative.management(input.toString()))
+            assertTrue(action.getJSONObject("members").has(id))
+        } finally { secret.fill(0) }
+    }
     @Test fun invalidSecretsAreRejected() {
         for (secret in listOf(byteArrayOf(), ByteArray(4097), byteArrayOf(1, 2, 3))) {
             assertThrows(IllegalStateException::class.java) { UnionNative.peerId(secret) }

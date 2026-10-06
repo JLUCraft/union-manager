@@ -277,6 +277,8 @@ class MainActivity : ComponentActivity() {
                             connectAfterLink = true
                         },
                     )
+                    AuditAnchorCard(state, identity, busy) { request(it) }
+                    BusinessAdminCard(state, identity, busy) { request(it) }
                     GenesisBuilderCard(genesisDraft) { genesisDraft = it }
                 }
                 val seatsValid = (seats.toIntOrNull() ?: 0) > 0

@@ -60,4 +60,34 @@ class ManagementScreenTest {
             assertEquals("founder", value.getJSONArray("founders").getJSONObject(0).getString("member"))
         }
     }
+    @Test fun businessRolesUseNativeValidationAndExplicitConfirmation() {
+        var action: JSONObject? = null
+        val state = JSONObject().put("admins", JSONArray().put("test-device"))
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { BusinessAdminCard(state, "test-device", false) { action = it } } } }
+        node(R.string.business_admin_open).performClick()
+        node(R.string.identity_field_member).performTextInput("stable-member")
+        node(R.string.business_roles).performTextInput("finance\nreviewer")
+        node(R.string.business_preview).performScrollTo().performClick()
+        node(R.string.business_submit).performScrollTo().performClick()
+        compose.runOnIdle { assertNull(action) }
+        compose.onAllNodesWithText(text(R.string.business_submit)).onLast().performClick()
+        compose.runOnIdle {
+            assertEquals("set_member_roles", action?.getString("type"))
+            assertEquals(2, action?.getJSONArray("roles")?.length())
+        }
+    }
+    @Test fun auditAnchorRequiresExplicitConfirmationBeforeDispatch() {
+        var action: JSONObject? = null
+        val state = JSONObject().put("admins", JSONArray().put("test-device"))
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AuditAnchorCard(state, "test-device", false) { action = it } } } }
+        node(R.string.audit_anchor_id).performTextInput("audit-test")
+        node(R.string.audit_anchor_digest).performTextInput("a".repeat(64))
+        node(R.string.audit_anchor_submit).performScrollTo().performClick()
+        compose.runOnIdle { assertNull(action) }
+        compose.onAllNodesWithText(text(R.string.audit_anchor_submit)).onLast().performClick()
+        compose.runOnIdle {
+            assertEquals("anchor_digest", action?.getString("type"))
+            assertEquals("a".repeat(64), action?.getString("digest"))
+        }
+    }
 }
