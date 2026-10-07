@@ -31,6 +31,15 @@
     <string name="connection_peer">服务器 ID（组织者提供）</string>
     <string name="connection_refresh">连接 / 刷新</string>
     <string name="connection_identity">本机设备身份</string>
+    <string name="profile_overview_title">概览</string>
+    <string name="profile_overview_unbound">未绑定成员身份</string>
+    <string name="profile_overview_offline">尚未连接服务器</string>
+    <string name="profile_overview_device">本机设备</string>
+    <string name="profile_section_device">设备与连接</string>
+    <string name="profile_section_governance">成员与治理</string>
+    <string name="profile_section_advanced">高级工具</string>
+    <string name="advanced_show">展开</string>
+    <string name="advanced_hide">收起</string>
     <string name="office_title">申请</string>
     <string name="office_empty">暂无活动</string>
     <string name="office_connect">连接后查看活动与审批</string>
@@ -238,8 +247,8 @@
     <string name="identity_show_facts">查看完整身份数据（高级）</string>
     <string name="identity_show_configuration">修改设置（高级）</string>
     <string name="identity_hide_configuration">收起设置</string>
-    <string name="identity_show_proposal">粘贴或查看原始记录（高级）</string>
-    <string name="identity_hide_proposal">收起原始记录</string>
+    <string name="identity_proposal_show">提案与签署</string>
+    <string name="identity_proposal_hide">收起提案与签署</string>
     <string name="identity_my_member">我的成员 ID</string>
     <string name="identity_my_clubs">所属社团</string>
     <string name="identity_summary_title">本次变更摘要</string>

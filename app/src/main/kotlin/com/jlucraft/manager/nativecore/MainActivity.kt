@@ -254,13 +254,8 @@ class MainActivity : ComponentActivity() {
                 }
                 val connectionContent: @Composable () -> Unit = {
                     SetupChecklist(identityReady = publicIdentity.isNotBlank(), configured = identityConfiguration.isNotBlank(), connected = state != null)
-                    DeviceIdentityCard(publicIdentity)
-                    IdentityCard(identityConfiguration, identity, busy, identityDirectory, { value ->
-                        identityConfiguration = value
-                        preferences.edit().putString("identity_configuration", value).apply()
-                        state = null
-                        message = getString(R.string.identity_saved)
-                    }, proposalState = identityProposal) { input, reply -> executeOps(input, reply, true) }
+                    ProfileOverviewCard(state, identity)
+                    SectionHeader(stringResource(R.string.profile_section_device))
                     ConnectionCard(
                         address = address,
                         peer = peer,
@@ -281,9 +276,19 @@ class MainActivity : ComponentActivity() {
                             connectAfterLink = true
                         },
                     )
-                    AuditAnchorCard(state, identity, busy) { request(it) }
-                    BusinessAdminCard(state, identity, busy) { request(it) }
-                    GenesisBuilderCard(genesisDraft) { genesisDraft = it }
+                    DeviceIdentityCard(publicIdentity)
+                    SectionHeader(stringResource(R.string.profile_section_governance))
+                    IdentityCard(identityConfiguration, identity, busy, identityDirectory, { value ->
+                        identityConfiguration = value
+                        preferences.edit().putString("identity_configuration", value).apply()
+                        state = null
+                        message = getString(R.string.identity_saved)
+                    }, proposalState = identityProposal) { input, reply -> executeOps(input, reply, true) }
+                    CollapsibleSection(title = stringResource(R.string.profile_section_advanced)) {
+                        AuditAnchorCard(state, identity, busy) { request(it) }
+                        BusinessAdminCard(state, identity, busy) { request(it) }
+                        GenesisBuilderCard(genesisDraft) { genesisDraft = it }
+                    }
                 }
                 val seatsValid = (seats.toIntOrNull() ?: 0) > 0
                 Surface(Modifier.fillMaxSize()) {

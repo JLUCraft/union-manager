@@ -32,6 +32,7 @@ class IdentityScreenTest {
         screen("")
         node(R.string.identity_empty).assertExists()
         node(R.string.identity_sync).assertIsNotEnabled()
+        node(R.string.identity_proposal_show).performScrollTo().performClick()
         node(R.string.identity_submit).assertIsNotEnabled()
     }
     @Test fun unavailableSourcePreservesLastVerifiedFacts() {
@@ -53,11 +54,12 @@ class IdentityScreenTest {
         node(R.string.identity_show_configuration).performScrollTo().performClick()
         node(R.string.identity_configuration).assertIsNotEnabled()
         node(R.string.identity_sync).assertIsNotEnabled()
+        node(R.string.identity_proposal_show).performScrollTo().performClick()
         node(R.string.identity_sign_offline).assertIsNotEnabled()
     }
     @Test fun offlineSignatureDoesNotClaimCurrentAuthority() {
         screen(config) { _, receive -> receive(JSONObject().put("signed", true)) }
-        node(R.string.identity_show_proposal).performScrollTo().performClick()
+        node(R.string.identity_proposal_show).performScrollTo().performClick()
         node(R.string.identity_proposal).performScrollTo().performTextInput("{}")
         node(R.string.identity_sign_offline).performScrollTo().performClick()
         node(R.string.identity_current).assertDoesNotExist()
@@ -89,7 +91,7 @@ class IdentityScreenTest {
         node(R.string.identity_configuration).assertExists()
         node(R.string.identity_hide_configuration).performScrollTo().performClick()
         node(R.string.identity_configuration).assertDoesNotExist()
-        node(R.string.identity_show_proposal).performScrollTo().performClick()
+        node(R.string.identity_proposal_show).performScrollTo().performClick()
         node(R.string.identity_proposal).assertExists()
     }
     @Test fun firstRunStillShowsTheSettingsFieldSoTheyCanBeImported() {

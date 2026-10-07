@@ -99,8 +99,10 @@ internal fun IdentityCard(
         if (config.isNotBlank()) TextButton(onClick = { showConfiguration = !showConfiguration }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
             Text(stringResource(if (showConfiguration) R.string.identity_hide_configuration else R.string.identity_show_configuration))
         }
-        ActionButton(R.string.identity_inspect, !busy && config.isNotBlank(), ActionKind.Secondary) { run("inspect") }
-        ActionButton(R.string.identity_sync, !busy && config.isNotBlank(), ActionKind.Secondary) { run("sync") }
+        Row(horizontalArrangement = Arrangement.spacedBy(SPACING_S)) {
+            ActionButton(R.string.identity_inspect, !busy && config.isNotBlank(), ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("inspect") }
+            ActionButton(R.string.identity_sync, !busy && config.isNotBlank(), ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("sync") }
+        }
         if (state.availability == IdentityAvailability.Unavailable) {
             Text(stringResource(R.string.identity_unavailable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -118,23 +120,25 @@ internal fun IdentityCard(
             Text(stringResource(R.string.identity_verified_facts), style = MaterialTheme.typography.titleSmall)
             IdentifierDetails(remember(value) { value.toString(2) }, R.string.identity_show_facts)
         }
-        IdentityActionForm(!busy && config.isNotBlank()) { action -> run("draft", action) }
         TextButton(onClick = { showProposal = !showProposal }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
-            Text(stringResource(if (showProposal) R.string.identity_hide_proposal else R.string.identity_show_proposal))
+            Text(stringResource(if (showProposal) R.string.identity_proposal_hide else R.string.identity_proposal_show))
         }
-        if (showProposal) OutlinedTextField(proposal, { proposal = it; proposalInvalid = false }, label = { Text(stringResource(R.string.identity_proposal)) }, enabled = !busy, isError = proposalInvalid,
-            modifier = Modifier.fillMaxWidth())
-        if (proposalInvalid) Text(stringResource(R.string.identity_proposal_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        Text(stringResource(R.string.identity_review), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (proposal.isNotBlank()) {
-            ProposalSummary(proposal)
-            PublicJsonActions(proposal, R.string.identity_proposal, !busy)
+        if (showProposal) {
+            IdentityActionForm(!busy && config.isNotBlank()) { action -> run("draft", action) }
+            OutlinedTextField(proposal, { proposal = it; proposalInvalid = false }, label = { Text(stringResource(R.string.identity_proposal)) }, enabled = !busy, isError = proposalInvalid,
+                modifier = Modifier.fillMaxWidth())
+            if (proposalInvalid) Text(stringResource(R.string.identity_proposal_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.identity_review), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (proposal.isNotBlank()) {
+                ProposalSummary(proposal)
+                PublicJsonActions(proposal, R.string.identity_proposal, !busy)
+            }
+            val ready = !busy && config.isNotBlank() && proposal.isNotBlank()
+            ActionButton(R.string.identity_draft, ready, ActionKind.Secondary) { run("draft") }
+            ActionButton(R.string.identity_sign, ready, ActionKind.Secondary) { run("sign") }
+            ActionButton(R.string.identity_sign_offline, ready, ActionKind.Secondary) { run("sign_offline") }
+            ActionButton(R.string.identity_submit, ready, ActionKind.Confirmed, R.string.identity_submit_confirm) { run("submit") }
         }
-        val ready = !busy && config.isNotBlank() && proposal.isNotBlank()
-        ActionButton(R.string.identity_draft, ready, ActionKind.Secondary) { run("draft") }
-        ActionButton(R.string.identity_sign, ready, ActionKind.Secondary) { run("sign") }
-        ActionButton(R.string.identity_sign_offline, ready, ActionKind.Secondary) { run("sign_offline") }
-        ActionButton(R.string.identity_submit, ready, ActionKind.Confirmed, R.string.identity_submit_confirm) { run("submit") }
     }
 }
 

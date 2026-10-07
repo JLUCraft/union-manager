@@ -34,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.TextButton
@@ -204,19 +205,47 @@ fun IdentifierDetails(value: String, label: Int = R.string.identifier_details) {
     }
 }
 
+/** A named page section above one or more cards. */
+@Composable
+internal fun SectionHeader(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier.padding(horizontal = SPACING_S, vertical = SPACING_M),
+    )
+}
+
+/** A whole section, headed by [SectionHeader], that reveals its cards only when expanded. */
+@Composable
+internal fun CollapsibleSection(
+    title: String,
+    initiallyExpanded: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        SectionHeader(text = title, modifier = Modifier.weight(1f))
+        TextButton(onClick = { expanded = !expanded }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
+            Text(stringResource(if (expanded) R.string.advanced_hide else R.string.advanced_show))
+        }
+    }
+    if (expanded) Column(content = content)
+}
+
 /** Shared action button: primary, secondary, or destructive with a confirmation dialog. */
 internal enum class ActionKind { Primary, Secondary, Confirmed, Destructive }
 
 @Composable
-internal fun ActionButton(label: Int, enabled: Boolean, kind: ActionKind = ActionKind.Primary, confirmText: Int = R.string.confirm_irreversible, click: () -> Unit) {
+internal fun ActionButton(label: Int, enabled: Boolean, kind: ActionKind = ActionKind.Primary, confirmText: Int = R.string.confirm_irreversible, modifier: Modifier = Modifier.fillMaxWidth(), click: () -> Unit) {
     var confirming by remember { mutableStateOf(false) }
-    val modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET)
+    val buttonModifier = modifier.heightIn(min = MIN_TOUCH_TARGET)
     val onClick = if (kind == ActionKind.Destructive || kind == ActionKind.Confirmed) ({ confirming = true }) else click
     when (kind) {
-        ActionKind.Primary, ActionKind.Confirmed -> Button(onClick = onClick, enabled = enabled, modifier = modifier) { Text(stringResource(label)) }
-        ActionKind.Secondary -> OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier) { Text(stringResource(label)) }
+        ActionKind.Primary, ActionKind.Confirmed -> Button(onClick = onClick, enabled = enabled, modifier = buttonModifier) { Text(stringResource(label)) }
+        ActionKind.Secondary -> OutlinedButton(onClick = onClick, enabled = enabled, modifier = buttonModifier) { Text(stringResource(label)) }
         ActionKind.Destructive -> OutlinedButton(
-            onClick = onClick, enabled = enabled, modifier = modifier,
+            onClick = onClick, enabled = enabled, modifier = buttonModifier,
             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = if (enabled) 1f else DISABLED_BORDER_ALPHA)),
         ) { Text(stringResource(label)) }
