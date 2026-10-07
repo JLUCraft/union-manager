@@ -156,12 +156,12 @@ dependencies = [
  "identity",
  "journal",
  "node",
+ "protocol",
  "serde",
  "serde_json",
  "state",
  "tokio",
  "tracing",
- "wire",
 ]
 
 [[package]]
@@ -367,11 +367,11 @@ dependencies = [
  "identity",
  "league",
  "node",
+ "protocol",
  "serde",
  "serde_json",
  "state",
  "tokio",
- "wire",
 ]
 
 [[package]]
@@ -708,10 +708,10 @@ dependencies = [
 name = "events"
 version = "0.1.0"
 dependencies = [
+ "protocol",
  "serde",
  "serde_json",
  "state",
- "wire",
 ]
 
 [[package]]
@@ -754,10 +754,10 @@ checksum = "ef25905e51abafe4dcea6c15fec58c57b601cdbd0ee53d22ea1d3016c587d39b"
 name = "flows"
 version = "0.1.0"
 dependencies = [
+ "protocol",
  "serde",
  "serde_json",
  "state",
- "wire",
 ]
 
 [[package]]
@@ -1310,10 +1310,10 @@ name = "identity"
 version = "0.2.0"
 dependencies = [
  "libp2p-identity",
+ "protocol",
  "serde",
  "serde_json",
  "tempfile",
- "wire",
 ]
 
 [[package]]
@@ -1550,12 +1550,12 @@ name = "journal"
 version = "0.2.0"
 dependencies = [
  "identity",
+ "protocol",
  "serde",
  "serde_json",
  "state",
  "tempfile",
  "tokio",
- "wire",
 ]
 
 [[package]]
@@ -1579,11 +1579,11 @@ name = "league"
 version = "0.2.0"
 dependencies = [
  "identity",
+ "protocol",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "state",
- "wire",
 ]
 
 [[package]]
@@ -2278,12 +2278,12 @@ dependencies = [
  "libp2p",
  "libp2p-stream",
  "prost",
+ "protocol",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
  "uuid",
- "wire",
 ]
 
 [[package]]
@@ -2579,6 +2579,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "protocol"
+version = "0.2.0"
+dependencies = [
+ "futures",
+ "multibase",
+ "prost",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -3024,9 +3037,9 @@ version = "0.2.0"
 dependencies = [
  "identity",
  "multiaddr",
+ "protocol",
  "serde",
  "serde_json",
- "wire",
 ]
 
 [[package]]
@@ -3773,19 +3786,6 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
-
-[[package]]
-name = "wire"
-version = "0.2.0"
-dependencies = [
- "futures",
- "multibase",
- "prost",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "thiserror 2.0.21",
-]
 
 [[package]]
 name = "wit-bindgen"

@@ -202,7 +202,7 @@ internal fun ProposalSummary(proposal: String) {
     Text(stringResource(R.string.identity_signature_count, record.optJSONArray("signatures")?.length() ?: 0), style = MaterialTheme.typography.bodySmall)
 }
 
-/** A field value as an operator reads it: evidence kinds use their plain names, never wire identifiers. */
+/** A field value as an operator reads it: evidence kinds use their plain names, never raw protocol identifiers. */
 @Composable
 private fun summaryValue(value: Any?): String? {
     val parts = when (value) {

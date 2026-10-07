@@ -4,7 +4,7 @@ internal data class GameOpsTarget(val address: String = "", val peer: String = "
     val complete: Boolean get() = listOf(address, peer, service).all { it.isNotBlank() }
 }
 
-// Presentation data only. The authoritative operations schema lives in union-core/wire.
+// Presentation data only. The operations schema lives in the union-core protocol crate.
 internal data class GameInstance(
     val id: String, val state: String, val version: String,
     val online: Int, val maximum: Int,
