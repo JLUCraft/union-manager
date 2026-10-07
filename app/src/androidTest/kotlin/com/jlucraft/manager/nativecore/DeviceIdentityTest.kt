@@ -12,7 +12,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.jlucraft.manager.R
-import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -32,15 +31,16 @@ class DeviceIdentityTest {
             val value = JSONObject(text)
             assertEquals(setOf("peer", "public_key"), value.keys().asSequence().toSet())
             assertEquals(UnionNative.peerId(secret), value.getString("peer"))
-            assertEquals(JSONArray(UnionNative.publicKey(secret)).toString(), value.getJSONArray("public_key").toString())
-            assertTrue(value.getJSONArray("public_key").length() > 0)
+            assertEquals(UnionNative.publicIdentity(secret), text)
+            val key = value.getString("public_key")
+            assertTrue(key.isNotBlank() && key.matches(Regex("[0-9a-f]+")))
             assertEquals(text, devicePublicIdentity(secret))
             text
         } finally { secret.fill(0) }
         compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { DeviceIdentityCard(exported) } } }
         compose.onNodeWithText(context.getString(R.string.identifier_details)).performClick()
         compose.onNodeWithText(exported).assertExists()
-        compose.onNodeWithText(context.getString(R.string.identifier_copy)).performScrollTo().performClick()
+        compose.onNodeWithText(context.getString(R.string.identity_export_copy)).performScrollTo().performClick()
         compose.runOnIdle {
             val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
             assertEquals(exported, clipboard.primaryClip?.getItemAt(0)?.text?.toString())

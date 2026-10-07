@@ -278,14 +278,16 @@ pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_executeI
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_publicKey(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_publicIdentity(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     secret: JByteArray<'_>,
 ) -> jstring {
     let result = catch_unwind(AssertUnwindSafe(|| {
-        serde_json::to_string(&identity(&env, &secret)?.public_key().encode_protobuf())
-            .map_err(|e| e.to_string())
+        serde_json::to_string_pretty(&::client::management::PublicIdentity::from_identity(
+            &identity(&env, &secret)?,
+        ))
+        .map_err(|e| e.to_string())
     }))
     .unwrap_or_else(|_| Err("Native identity operation failed".into()));
     reply(&mut env, result)

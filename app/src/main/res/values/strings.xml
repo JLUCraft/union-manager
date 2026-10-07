@@ -205,10 +205,11 @@
     <string name="device_identity_title">本机公开身份</string>
     <string name="device_identity_explanation">把公开身份发给服务器管理员，由他导入服务器。私钥只留在本机，公开身份不会给任何人权限。</string>
     <string name="device_identity_peer">设备 ID</string>
-    <string name="device_identity_copy">复制公开身份</string>
-    <string name="device_identity_copied">已复制</string>
-    <string name="device_identity_share">分享给管理员</string>
-    <string name="device_identity_share_title">发送公开身份</string>
+    <string name="device_identity_key">公钥（hex）</string>
+    <string name="device_identity_download">下载 JSON 文件</string>
+    <string name="device_identity_exported">已导出身份文件</string>
+    <string name="device_identity_export_failed">导出失败</string>
+    <string name="device_identity_file_name">union-identity.json</string>
     <string name="identifier_copied">已复制</string>
     <string name="setup_title">开始使用</string>
     <string name="setup_helper">按顺序完成下面三步，就能管理联盟。</string>

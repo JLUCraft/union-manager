@@ -35,7 +35,7 @@ class BiometricVaultTest {
         // The host script provides virtual sensor touches, never an authentication bypass.
         compose.waitUntil(60_000) { compose.onAllNodesWithText(text(R.string.navigation_account)).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText(text(R.string.navigation_account)).performClick()
-        compose.onNodeWithText(text(R.string.device_identity_copy)).performScrollTo().performClick()
+        compose.onNodeWithText(text(R.string.identity_export_copy)).performScrollTo().performClick()
         var exported = ""
         compose.runOnIdle { exported = compose.activity.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString() }
         val value = JSONObject(exported)

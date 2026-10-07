@@ -7,7 +7,7 @@ object UnionNative {
     external fun signIdentityOffline(secret: ByteArray, request: String): String
     external fun generateSecret(): ByteArray
     external fun peerId(secret: ByteArray): String
-    external fun publicKey(secret: ByteArray): String
+    external fun publicIdentity(secret: ByteArray): String
     external fun reviewIdentityHistory(input: String): String
     external fun executeIdentity(secret: ByteArray, request: String): String
     external fun executeOps(secret: ByteArray, request: String): String

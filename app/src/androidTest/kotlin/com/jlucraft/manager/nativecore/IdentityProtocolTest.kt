@@ -10,7 +10,7 @@ import java.security.MessageDigest
 class IdentityProtocolTest {
     private fun genesis(secret: ByteArray) = JSONObject().put("federation", "android-test")
         .put("founders", JSONArray().put(JSONObject().put("member", "stable-person").put("club", "test-club")
-            .put("public_key", JSONArray(UnionNative.publicKey(secret))))).put("quorum", 1)
+            .put("public_key", JSONObject(UnionNative.publicIdentity(secret)).getString("public_key")))).put("quorum", 1)
     private fun digest(value: JSONObject) = MessageDigest.getInstance("SHA-256")
         .digest(value.toString().toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
     private fun record(pin: String, sequence: Long, previous: String, action: JSONObject) = JSONObject()
