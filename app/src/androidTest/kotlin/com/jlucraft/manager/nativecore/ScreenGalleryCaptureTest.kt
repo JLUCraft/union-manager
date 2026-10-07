@@ -109,9 +109,9 @@ class ScreenGalleryCaptureTest {
         var configured by mutableStateOf(false)
         page {
             if (!configured) {
-                IdentityCard("", "device-fixture", false, context.cacheDir, {}, execute = { _, _ -> })
+                IdentityCard("", "device-fixture", false, context.cacheDir, onConfig = {}, execute = { _, _ -> })
             } else {
-                IdentityCard(identityConfig, "device-fixture", false, context.cacheDir, {}, execute = { _, reply ->
+                IdentityCard(identityConfig, "device-fixture", false, context.cacheDir, onConfig = {}, execute = { _, reply ->
                     reply(JSONObject("""{"members": {"member-li": ["device-fixture"]}, "memberships": [["member-li", "computer-club"]],
                         "chairs": {"computer-club": "member-li"},
                         "permissions": {"perm-1": {"member": "member-li", "service": "game-ops", "permission": "admin", "revoked": false}}}"""))

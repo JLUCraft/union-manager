@@ -443,4 +443,16 @@
     <string name="identity_verified_facts">完整身份详情（成员、服务、授权与换届）</string>
     <string name="business_current_roles">当前业务角色：%1$s</string>
     <string name="business_load_roles">载入当前角色</string>
+    <string name="identity_fetch">从服务器获取身份配置</string>
+    <string name="identity_fetch_hint">需要先在「组织连接」中填写连接地址和服务器 ID</string>
+    <string name="identity_fetch_failed">无法从服务器获取身份配置，请检查网络与连接信息后重试</string>
+    <string name="identity_fetch_dialog_title">确认服务器身份</string>
+    <string name="identity_fetch_federation">联盟：%1$s</string>
+    <string name="identity_fetch_founders">创始人</string>
+    <string name="identity_fetch_founder">%1$s / %2$s</string>
+    <string name="identity_fetch_quorum">所需签署人数：%1$d</string>
+    <string name="identity_fetch_office">该服务器同时提供办公服务，确认后将自动填入联盟校验码。</string>
+    <string name="identity_fetch_genesis">创世摘要（请与组织者核对）</string>
+    <string name="identity_fetch_warning">首次连接尚不信任此服务器。请通过可信渠道（如组织者当面提供）核对以上信息，确认后身份信息将长期保存在本机。</string>
+    <string name="identity_fetch_confirm">确认并保存</string>
 </resources>

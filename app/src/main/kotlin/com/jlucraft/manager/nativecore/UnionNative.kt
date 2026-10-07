@@ -10,6 +10,7 @@ object UnionNative {
     external fun publicIdentity(secret: ByteArray): String
     external fun reviewIdentityHistory(input: String): String
     external fun executeIdentity(secret: ByteArray, request: String): String
+    external fun fetchGenesis(secret: ByteArray, request: String): String
     external fun executeOps(secret: ByteArray, request: String): String
     external fun readOfficeFile(snapshot: String, cid: String): ByteArray
     external fun executePush(secret: ByteArray, request: String): String

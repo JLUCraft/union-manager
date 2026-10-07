@@ -151,6 +151,56 @@ pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_executeO
     request(&mut env, &secret, input, OPS_OPERATION)
 }
 
+/// TOFU bootstrap: fetch the identity genesis over an authenticated connection and
+/// pin it locally; the office business genesis is optional (server may not host it).
+async fn fetch_genesis(
+    identity: Identity,
+    text: &str,
+) -> Result<serde_json::Value, ::client::Error> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Input {
+        address: String,
+        peer: String,
+    }
+    let input: Input = serde_json::from_str(text).map_err(::client::Error::protocol)?;
+    let node = ::client::Node::start(identity, ::client::NodeConfig::default()).await?;
+    let result = async {
+        let (genesis, pin) =
+            ::client::trust::fetch_identity_genesis(&node, &input.address, &input.peer).await?;
+        let office = match ::client::trust::fetch_business_genesis::<::client::office::Office>(
+            &node,
+            &input.address,
+            &input.peer,
+            &pin,
+        )
+        .await
+        {
+            Ok((_, office_pin)) => serde_json::json!({"genesis_hash": office_pin}),
+            Err(_) => serde_json::Value::Null,
+        };
+        Ok::<serde_json::Value, ::client::Error>(serde_json::json!({
+            "identity": {"genesis": genesis, "genesis_hash": pin},
+            "office": office,
+        }))
+    };
+    let response = tokio::time::timeout(std::time::Duration::from_secs(150), result)
+        .await
+        .map_err(|_| ::client::Error::Protocol("Operation timed out".into()))??;
+    node.shutdown().await?;
+    Ok(response)
+}
+const GENESIS_OPERATION: u8 = 6;
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_fetchGenesis(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    secret: JByteArray<'_>,
+    input: JString<'_>,
+) -> jstring {
+    request(&mut env, &secret, input, GENESIS_OPERATION)
+}
+
 fn request(
     env: &mut JNIEnv<'_>,
     secret: &JByteArray<'_>,
@@ -192,6 +242,11 @@ fn request(
             } else if operation == OPS_OPERATION {
                 let input = serde_json::from_str(&input).map_err(invalid_request)?;
                 let response = runtime.block_on(execute_ops(identity, input))?;
+                serde_json::to_string(&response).map_err(|e| e.to_string().into())
+            } else if operation == GENESIS_OPERATION {
+                let response = runtime
+                    .block_on(fetch_genesis(identity, &input))
+                    .map_err(|e| e.failure())?;
                 serde_json::to_string(&response).map_err(|e| e.to_string().into())
             } else if operation == 2 {
                 let response = runtime

@@ -225,6 +225,33 @@ class MainActivity : ComponentActivity() {
                         request()
                     }
                 }
+                fun fetchGenesis(input: JSONObject, reply: (JSONObject) -> Unit) {
+                    if (busy || !unlocked) return
+                    busy = true
+                    val epoch = lockEpoch
+                    vault.authenticate(getString(R.string.identity_authenticate), { secret ->
+                        val material = secret.copyOf()
+                        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                            try {
+                                val response = withContext(Dispatchers.IO) {
+                                    try { JSONObject(UnionNative.fetchGenesis(material, input.toString())) }
+                                    finally { material.fill(0) }
+                                }
+                                if (lockEpoch == epoch && unlocked) reply(response)
+                            } catch (_: Exception) {
+                                if (lockEpoch == epoch && unlocked) reply(JSONObject().put("error", true))
+                            } finally {
+                                material.fill(0)
+                                if (lockEpoch == epoch) busy = false
+                            }
+                        }
+                    }, {
+                        if (lockEpoch == epoch) {
+                            busy = false
+                            reply(JSONObject().put("error", true))
+                        }
+                    })
+                }
                 fun executeOps(input: JSONObject, reply: (JSONObject) -> Unit, identityOperation: Boolean = false) {
                     if (busy || !unlocked) return
                     busy = true
@@ -278,12 +305,19 @@ class MainActivity : ComponentActivity() {
                     )
                     DeviceIdentityCard(publicIdentity)
                     SectionHeader(stringResource(R.string.profile_section_governance))
-                    IdentityCard(identityConfiguration, identity, busy, identityDirectory, { value ->
+                    IdentityCard(identityConfiguration, identity, busy, identityDirectory, address = address, peer = peer, onConfig = { value ->
                         identityConfiguration = value
                         preferences.edit().putString("identity_configuration", value).apply()
                         state = null
                         message = getString(R.string.identity_saved)
-                    }, proposalState = identityProposal) { input, reply -> executeOps(input, reply, true) }
+                    }, proposalState = identityProposal,
+                        fetch = { reply -> fetchGenesis(JSONObject().put("address", address).put("peer", peer), reply) },
+                        onOfficeGenesis = { pin ->
+                            genesisHash = pin
+                            preferences.edit().putString("office_genesis", pin).apply()
+                        },
+                        onFetchFailed = { message = getString(R.string.identity_fetch_failed) },
+                    ) { input, reply -> executeOps(input, reply, true) }
                     CollapsibleSection(title = stringResource(R.string.profile_section_advanced)) {
                         AuditAnchorCard(state, identity, busy) { request(it) }
                         BusinessAdminCard(state, identity, busy) { request(it) }

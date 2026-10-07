@@ -1,12 +1,15 @@
 package com.jlucraft.manager.nativecore
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.jlucraft.manager.R
 import org.json.JSONObject
@@ -41,8 +44,13 @@ internal fun identityMember(state: JSONObject, device: String): MemberIdentityVi
 @Composable
 internal fun IdentityCard(
     config: String, device: String, busy: Boolean, directory: File,
+    address: String = "", peer: String = "",
     onConfig: (String) -> Unit,
     proposalState: MutableState<String> = rememberSaveable { mutableStateOf("") },
+    fetch: ((JSONObject) -> Unit) -> Unit = {},
+    review: (String) -> String = { text -> UnionNative.management(text) },
+    onOfficeGenesis: (String) -> Unit = {},
+    onFetchFailed: () -> Unit = {},
     execute: (JSONObject, (JSONObject) -> Unit) -> Unit,
 ) {
     var configuration by remember(config) { mutableStateOf(config) }
@@ -51,6 +59,8 @@ internal fun IdentityCard(
     var facts by remember(config, device) { mutableStateOf<JSONObject?>(null) }
     var invalid by remember { mutableStateOf(false) }
     var proposalInvalid by remember { mutableStateOf(false) }
+    var fetching by remember(config) { mutableStateOf(false) }
+    var fetched by remember(config) { mutableStateOf<JSONObject?>(null) }
     // Raw settings and records are advanced material; the summary is what an operator reviews.
     var showConfiguration by rememberSaveable { mutableStateOf(false) }
     var showProposal by rememberSaveable { mutableStateOf(false) }
@@ -90,11 +100,44 @@ internal fun IdentityCard(
                 supportingText = if (invalid) ({ Text(stringResource(R.string.identity_invalid)) }) else null, modifier = Modifier.fillMaxWidth())
             ActionButton(R.string.identity_save, !busy) {
                 try {
-                    val verified = UnionNative.management(JSONObject().put("operation", "review_configuration").put("config", JSONObject(configuration)).toString())
+                    val verified = review(JSONObject().put("operation", "review_configuration").put("config", JSONObject(configuration)).toString())
                     onConfig(identityConfig(verified, directory).toString()); invalid = false
                 }
                 catch (_: Exception) { invalid = true }
             }
+        }
+        if (config.isBlank()) {
+            ActionButton(R.string.identity_fetch, !busy && !fetching && address.isNotBlank() && peer.isNotBlank(), ActionKind.Secondary) {
+                fetching = true
+                fetch { result ->
+                    fetching = false
+                    if (result.has("error")) onFetchFailed() else fetched = result
+                }
+            }
+            if (address.isBlank() || peer.isBlank()) {
+                Text(stringResource(R.string.identity_fetch_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (fetching) LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        fetched?.let { result ->
+            GenesisConfirmDialog(result, onConfirm = {
+                fetched = null
+                try {
+                    val identity = result.getJSONObject("identity")
+                    val candidate = JSONObject()
+                        .put("genesis", identity.getJSONObject("genesis"))
+                        .put("genesis_hash", identity.getString("genesis_hash"))
+                        .put("address", address)
+                        .put("peer", peer)
+                    val verified = review(JSONObject().put("operation", "review_configuration").put("config", candidate).toString())
+                    onConfig(identityConfig(verified, directory).toString())
+                    result.optJSONObject("office")?.optString("genesis_hash")
+                        ?.takeIf { GENESIS_HASH_PATTERN.matches(it) }
+                        ?.let(onOfficeGenesis)
+                } catch (_: Exception) {
+                    onFetchFailed()
+                }
+            }, onDismiss = { fetched = null })
         }
         if (config.isNotBlank()) TextButton(onClick = { showConfiguration = !showConfiguration }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
             Text(stringResource(if (showConfiguration) R.string.identity_hide_configuration else R.string.identity_show_configuration))
@@ -176,4 +219,41 @@ private fun summaryValue(value: Any?): String? {
             else -> part
         }
     }
+}
+
+/** First-connection review: the operator confirms the fetched identity genesis before it becomes trusted. */
+@Composable
+internal fun GenesisConfirmDialog(fetched: JSONObject, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val genesis = runCatching { fetched.getJSONObject("identity").getJSONObject("genesis") }.getOrNull() ?: return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.identity_fetch_dialog_title)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(SPACING_S)) {
+                Text(stringResource(R.string.identity_fetch_federation, genesis.optString("federation")), style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.identity_fetch_founders), style = MaterialTheme.typography.labelMedium)
+                genesis.optJSONArray("founders")?.let { founders ->
+                    for (index in 0 until founders.length()) {
+                        val founder = founders.optJSONObject(index) ?: continue
+                        Text(stringResource(R.string.identity_fetch_founder, founder.optString("member"), founder.optString("club")), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Text(stringResource(R.string.identity_fetch_quorum, genesis.optInt("quorum")), style = MaterialTheme.typography.bodyMedium)
+                if (!fetched.isNull("office")) {
+                    Text(stringResource(R.string.identity_fetch_office), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(stringResource(R.string.identity_fetch_genesis), style = MaterialTheme.typography.labelMedium)
+                SelectionContainer {
+                    Text(genesis.toString(2), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                }
+                Text(stringResource(R.string.identity_fetch_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(R.string.identity_fetch_confirm)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(R.string.dialog_cancel)) }
+        },
+    )
 }

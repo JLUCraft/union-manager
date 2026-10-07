@@ -49,7 +49,7 @@ class StagingChairFlowTest {
             compose.setContent {
                 MaterialTheme {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
-                        IdentityCard(config, UnionNative.peerId(secret), false, context.cacheDir, {}, execute = { input, receive ->
+                        IdentityCard(config, UnionNative.peerId(secret), false, context.cacheDir, onConfig = {}, execute = { input, receive ->
                             Thread {
                                 val result = try { JSONObject(UnionNative.executeIdentity(secret, input.toString())) }
                                 catch (e: Exception) { JSONObject().put("error", e.message ?: "failed") }
