@@ -1,9 +1,16 @@
 package com.jlucraft.manager.nativecore
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,7 +44,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.jlucraft.manager.R
@@ -54,6 +66,9 @@ import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
 
 val MIN_TOUCH_TARGET = 48.dp
+
+/** Upper bound for a single-pane page so cards do not stretch across an expanded window. */
+val CONTENT_MAX_WIDTH = 840.dp
 
 val SPACING_XS = 4.dp
 val SPACING_S = 8.dp
@@ -130,7 +145,7 @@ private enum class PickerStep { Closed, Date, Time }
 
 @Composable
 fun ManagerCard(
-    title: String,
+    title: String? = null,
     helper: String? = null,
     statusText: String? = null,
     statusActive: Boolean = false,
@@ -141,9 +156,9 @@ fun ManagerCard(
             modifier = Modifier.padding(SPACING_L),
             verticalArrangement = Arrangement.spacedBy(SPACING_M),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (title != null || statusText != null) Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
                     if (helper != null) {
                         Text(
                             helper,
@@ -154,7 +169,6 @@ fun ManagerCard(
                 }
                 if (statusText != null) StatusPill(text = statusText, active = statusActive)
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             content()
         }
     }
@@ -167,7 +181,7 @@ internal fun StatusPill(text: String, active: Boolean) {
         else MaterialTheme.colorScheme.surfaceVariant,
         contentColor = if (active) MaterialTheme.colorScheme.onSecondaryContainer
         else MaterialTheme.colorScheme.onSurfaceVariant,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(percent = 50),
     ) {
         Text(
             text,
@@ -196,12 +210,42 @@ fun IdentifierDetails(value: String, label: Int = R.string.identifier_details) {
     TextButton(onClick = { expanded = !expanded }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
         Text(stringResource(label))
     }
-    if (expanded) {
-        SelectionContainer { Text(value, style = MaterialTheme.typography.bodySmall) }
-        TextButton(onClick = {
-            copyToClipboard(context, context.getString(R.string.identifier_details), value)
-            copied = true
-        }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(if (copied) R.string.identifier_copied else R.string.identifier_copy)) }
+    AnimatedVisibility(visible = expanded, enter = fadeIn() + expandVertically(), exit = shrinkVertically() + fadeOut()) {
+        Column {
+            SelectionContainer { Text(value, style = MaterialTheme.typography.bodySmall) }
+            TextButton(onClick = {
+                copyToClipboard(context, context.getString(R.string.identifier_details), value)
+                copied = true
+            }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(if (copied) R.string.identifier_copied else R.string.identifier_copy)) }
+        }
+    }
+}
+
+/** M3 screen shell: pinned top app bar, optional busy indicator, insets-aware content. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ManagerScreenScaffold(
+    title: String,
+    busy: Boolean,
+    modifier: Modifier = Modifier,
+    navigationIcon: @Composable () -> Unit = {},
+    content: @Composable () -> Unit,
+) {
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    Scaffold(
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = navigationIcon,
+                scrollBehavior = scrollBehavior,
+            )
+        },
+    ) { innerPadding ->
+        Column(Modifier.fillMaxSize().padding(innerPadding)) {
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Box(Modifier.weight(1f).fillMaxWidth()) { content() }
+        }
     }
 }
 
@@ -212,7 +256,7 @@ internal fun SectionHeader(text: String, modifier: Modifier = Modifier) {
         text,
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier.padding(horizontal = SPACING_S, vertical = SPACING_M),
+        modifier = modifier.padding(horizontal = SPACING_L, vertical = SPACING_M),
     )
 }
 
@@ -230,7 +274,9 @@ internal fun CollapsibleSection(
             Text(stringResource(if (expanded) R.string.advanced_hide else R.string.advanced_show))
         }
     }
-    if (expanded) Column(content = content)
+    AnimatedVisibility(visible = expanded, enter = fadeIn() + expandVertically(), exit = shrinkVertically() + fadeOut()) {
+        Column(content = content)
+    }
 }
 
 /** Shared action button: primary, secondary, or destructive with a confirmation dialog. */

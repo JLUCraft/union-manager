@@ -43,6 +43,9 @@
     <string name="office_title">申请</string>
     <string name="office_empty">暂无活动</string>
     <string name="office_connect">连接后查看活动与审批</string>
+    <string name="office_detail_missing">该条目已不存在</string>
+    <string name="office_detail_placeholder">选择左侧条目查看详情</string>
+    <string name="navigation_back">返回</string>
     <string name="office_name">申请标题</string>
     <string name="office_opens">报名开始</string>
     <string name="office_closes">报名截止</string>

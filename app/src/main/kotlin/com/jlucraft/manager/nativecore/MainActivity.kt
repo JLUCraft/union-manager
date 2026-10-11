@@ -9,9 +9,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import com.jlucraft.manager.R
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
+import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
+import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
+import androidx.window.core.layout.WindowSizeClass.Companion.WIDTH_DP_EXPANDED_LOWER_BOUND
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -63,6 +70,9 @@ class MainActivity : ComponentActivity() {
     private var unlocked by mutableStateOf(false)
     private var lockEpoch by mutableStateOf(0L)
     private var focusedNotice by mutableStateOf<String?>(null)
+    @OptIn(ExperimentalMaterial3AdaptiveApi::class)
+    @Composable
+    private fun rememberOfficeSceneStrategies() = listOf(rememberListDetailSceneStrategy<NavKey>())
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -404,79 +414,121 @@ class MainActivity : ComponentActivity() {
                                 topBackStack.clear(); topBackStack.add(OfficeRoot)
                             },
                         ) {
+                            val detailBack: () -> Unit = { if (topBackStack.size > 1) topBackStack.removeAt(topBackStack.lastIndex) }
+                            val wideLayout = currentWindowAdaptiveInfoV2().windowSizeClass.isWidthAtLeastBreakpoint(WIDTH_DP_EXPANDED_LOWER_BOUND)
+                            @OptIn(ExperimentalMaterial3AdaptiveApi::class)
                             NavDisplay(
                                 backStack = topBackStack,
                                 modifier = Modifier.fillMaxSize(),
-                                onBack = { if (topBackStack.size > 1) topBackStack.removeAt(topBackStack.lastIndex) },
+                                onBack = detailBack,
+                                sceneStrategies = rememberOfficeSceneStrategies(),
                                 entryProvider = entryProvider {
                                     entry<LeagueHome> {
-                                        Column(
-                                            Modifier.safeDrawingPadding().fillMaxSize().padding(horizontal = SPACING_L, vertical = SPACING_M).verticalScroll(rememberScrollState()),
-                                            verticalArrangement = Arrangement.spacedBy(SPACING_L),
-                                        ) {
-                                            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                                                            Column {
-                                                Text(stringResource(R.string.management_title), style = MaterialTheme.typography.headlineSmall)
-                                                Text(
-                                                    stringResource(R.string.management_subtitle),
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
+                                        ManagerScreenScaffold(stringResource(R.string.management_title), busy) {
+                                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                                                Column(
+                                                    Modifier.fillMaxSize().widthIn(max = CONTENT_MAX_WIDTH).padding(horizontal = SPACING_L, vertical = SPACING_M).verticalScroll(rememberScrollState()),
+                                                    verticalArrangement = Arrangement.spacedBy(SPACING_L),
+                                                ) {
+                                                    Text(
+                                                        stringResource(R.string.management_subtitle),
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                    GameOpsCard { input, reply -> executeOps(input, reply) }
+                                                    SeasonCard(state, identity, busy) { request(it) }
+                                                    CreateLeagueCard(
+                                                        league = league,
+                                                        seats = seats,
+                                                        crossClub = crossClub,
+                                                        host = host,
+                                                        scorer = scorer,
+                                                        connected = state != null,
+                                                        busy = busy,
+                                                        seatsValid = seatsValid,
+                                                        onLeagueChange = { league = it },
+                                                        onSeatsChange = { seats = it },
+                                                        onCrossClubChange = { crossClub = it },
+                                                        onHostChange = { host = it },
+                                                        onScorerChange = { scorer = it },
+                                                        onCreate = {
+                                                            request(JSONObject().put("type", "create_league").put("league", league).put("host", host).put("scorer", scorer)
+                                                                .put("rules", JSONObject().put("cross_club", crossClub).put("seats", seats.toInt()).put("reconnect_min_ms", 15000).put("reconnect_max_ms", 90000)))
+                                                        },
+                                                    )
+                                                    LeagueListSection(
+                                                        state = state,
+                                                        busy = busy,
+                                                        onStart = { leagueId ->
+                                                            val seed = ByteArray(32).also { SecureRandom().nextBytes(it) }
+                                                            request(JSONObject().put("type", "start").put("league", leagueId).put("seed", JSONArray(seed.map { it.toInt() and 255 })))
+                                                        },
+                                                    )
+                                                }
                                             }
-                                            GameOpsCard { input, reply -> executeOps(input, reply) }
-                                            SeasonCard(state, identity, busy) { request(it) }
-                                            CreateLeagueCard(
-                                                league = league,
-                                                seats = seats,
-                                                crossClub = crossClub,
-                                                host = host,
-                                                scorer = scorer,
-                                                connected = state != null,
-                                                busy = busy,
-                                                seatsValid = seatsValid,
-                                                onLeagueChange = { league = it },
-                                                onSeatsChange = { seats = it },
-                                                onCrossClubChange = { crossClub = it },
-                                                onHostChange = { host = it },
-                                                onScorerChange = { scorer = it },
-                                                onCreate = {
-                                                    request(JSONObject().put("type", "create_league").put("league", league).put("host", host).put("scorer", scorer)
-                                                        .put("rules", JSONObject().put("cross_club", crossClub).put("seats", seats.toInt()).put("reconnect_min_ms", 15000).put("reconnect_max_ms", 90000)))
-                                                },
-                                            )
-                                            LeagueListSection(
-                                                state = state,
-                                                busy = busy,
-                                                onStart = { id ->
-                                                    val seed = ByteArray(32).also { SecureRandom().nextBytes(it) }
-                                                    request(JSONObject().put("type", "start").put("league", id).put("seed", JSONArray(seed.map { it.toInt() and 255 })))
-                                                },
-                                            )
                                         }
                                     }
-                                    entry<OfficeRoot> {
-                                        Column(Modifier.safeDrawingPadding().fillMaxSize()) {
-                                            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                                                            OfficeHomeNav(
-                                                state = state,
-                                                busy = busy,
-                                                identity = identity,
-                                                focusedNotice = focusedNotice,
-                                                pushReady = pushReady,
-                                                openLeague = { resource, selectedLeague ->
-                                                    selectMode(false)
-                                                    address = resource.getString("address")
-                                                    peer = resource.getString("peer")
-                                                    genesisHash = resource.getString("genesis")
-                                                    league = selectedLeague
-                                                    request()
-                                                },
-                                                request = { request(it) },
-                                                modifier = Modifier.weight(1f),
-                                                connectionContent = connectionContent,
-                                                destination = officeDestination,
-                                                onOpenSettings = { officeDestination = OfficeDestination.Settings },
+                                    @OptIn(ExperimentalMaterial3AdaptiveApi::class)
+                                    entry<OfficeRoot>(
+                                        metadata = ListDetailSceneStrategy.listPane(OFFICE_SCENE_KEY) {
+                                            Text(
+                                                stringResource(R.string.office_detail_placeholder),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
+                                        },
+                                    ) {
+                                        OfficeHomeNav(
+                                            state = state,
+                                            busy = busy,
+                                            identity = identity,
+                                            focusedNotice = focusedNotice,
+                                            pushReady = pushReady,
+                                            openLeague = { resource, selectedLeague ->
+                                                selectMode(false)
+                                                address = resource.getString("address")
+                                                peer = resource.getString("peer")
+                                                genesisHash = resource.getString("genesis")
+                                                league = selectedLeague
+                                                request()
+                                            },
+                                            request = { request(it) },
+                                            connectionContent = connectionContent,
+                                            destination = officeDestination,
+                                            onOpenSettings = { officeDestination = OfficeDestination.Settings },
+                                            onOpenEvent = { topBackStack.add(OfficeEventDetail(it)) },
+                                            onOpenFlow = { topBackStack.add(OfficeFlowDetail(it)) },
+                                        )
+                                    }
+                                    @OptIn(ExperimentalMaterial3AdaptiveApi::class)
+                                    entry<OfficeEventDetail>(
+                                        metadata = ListDetailSceneStrategy.detailPane(OFFICE_SCENE_KEY),
+                                    ) { key ->
+                                        val event = state?.optJSONObject("events")?.optJSONObject(key.eventId)
+                                        ManagerScreenScaffold(event?.optString("title") ?: stringResource(R.string.office_title), busy,
+                                            navigationIcon = { if (!wideLayout) BackIcon(detailBack) },
+                                        ) {
+                                            Column(
+                                                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(SPACING_L),
+                                                verticalArrangement = Arrangement.spacedBy(SPACING_L),
+                                            ) {
+                                                OfficeEventDetailScreen(state, busy, identity, key.eventId) { request(it) }
+                                            }
+                                        }
+                                    }
+                                    @OptIn(ExperimentalMaterial3AdaptiveApi::class)
+                                    entry<OfficeFlowDetail>(
+                                        metadata = ListDetailSceneStrategy.detailPane(OFFICE_SCENE_KEY),
+                                    ) { key ->
+                                        ManagerScreenScaffold(stringResource(R.string.office_flows), busy,
+                                            navigationIcon = { if (!wideLayout) BackIcon(detailBack) },
+                                        ) {
+                                            Column(
+                                                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(SPACING_L),
+                                                verticalArrangement = Arrangement.spacedBy(SPACING_L),
+                                            ) {
+                                                OfficeFlowDetailScreen(state, busy, key.flowId) { request(it) }
+                                            }
                                         }
                                     }
                                 },
@@ -493,3 +545,15 @@ class MainActivity : ComponentActivity() {
 
 @Serializable internal data object LeagueHome : NavKey
 @Serializable internal data object OfficeRoot : NavKey
+@Serializable internal data class OfficeEventDetail(val eventId: String) : NavKey
+@Serializable internal data class OfficeFlowDetail(val flowId: String) : NavKey
+
+/** Scene key grouping the office list pane with its event/flow detail panes. */
+private const val OFFICE_SCENE_KEY = "office"
+
+@Composable
+private fun BackIcon(onBack: () -> Unit) {
+    IconButton(onClick = onBack) {
+        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigation_back))
+    }
+}

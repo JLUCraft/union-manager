@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.*
@@ -34,12 +37,17 @@ class OfficeScreenTest {
         org.junit.Assert.assertEquals(OfficeDestination.Approvals, selected)
     }
     @Test fun disconnectedOfficeCanOpenConnectionSettings() {
+        var selected by mutableStateOf(OfficeDestination.Requests)
         compose.setContent { JluManagerTheme {
-            OfficeHomeNav(null, false, "", null, null, { _, _ -> }, {},
-                connectionContent = {
-                    ConnectionCard("", "", "", "", "", false, false, {}, {}, {}, {})
-                },
-            )
+            ManagementNavigation(true, selected, false, {}, { selected = it }) {
+                OfficeHomeNav(null, false, "", null, null, { _, _ -> }, {},
+                    destination = selected,
+                    connectionContent = {
+                        ConnectionCard("", "", "", "", "", false, false, {}, {}, {}, {})
+                    },
+                    onOpenSettings = { selected = OfficeDestination.Settings },
+                )
+            }
         } }
         captureScreen("android-office-01-disconnected-menu")
         compose.onNodeWithText(text(R.string.navigation_account)).performClick()

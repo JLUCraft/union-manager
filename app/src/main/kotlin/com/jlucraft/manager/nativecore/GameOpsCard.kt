@@ -45,7 +45,7 @@ internal fun GameOpsContent(
         if (busy) Text(stringResource(R.string.ops_loading))
         if (state.instances.isEmpty() && !busy) Text(stringResource(R.string.ops_empty))
         Box {
-            Button(onClick = { menu = true }, enabled = enabled && state.instances.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET)) {
+            OutlinedButton(onClick = { menu = true }, enabled = enabled && state.instances.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET)) {
                 Text(state.selected.ifEmpty { stringResource(R.string.ops_select) })
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -70,10 +70,13 @@ internal fun GameOpsContent(
         }
         val actions = listOf("status" to R.string.ops_status, "start" to R.string.ops_start, "stop" to R.string.ops_stop,
             "restart" to R.string.ops_restart, "kill" to R.string.ops_kill, "logs" to R.string.ops_logs)
+        // One filled action per card (refresh); operations stay outlined, kill is destructive with confirmation.
         actions.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(SPACING_S), modifier = Modifier.fillMaxWidth()) {
                 row.forEach { (op, label) ->
-                    Button(onClick = { onRun(op) }, enabled = enabled && state.selected.isNotBlank(), modifier = Modifier.weight(1f).heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(label)) }
+                    ActionButton(label, enabled && state.selected.isNotBlank(),
+                        if (op == "kill") ActionKind.Destructive else ActionKind.Secondary,
+                        modifier = Modifier.weight(1f)) { onRun(op) }
                 }
             }
         }

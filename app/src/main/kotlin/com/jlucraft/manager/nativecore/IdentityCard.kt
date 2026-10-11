@@ -1,5 +1,10 @@
 package com.jlucraft.manager.nativecore
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -166,21 +171,25 @@ internal fun IdentityCard(
         TextButton(onClick = { showProposal = !showProposal }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
             Text(stringResource(if (showProposal) R.string.identity_proposal_hide else R.string.identity_proposal_show))
         }
-        if (showProposal) {
-            IdentityActionForm(!busy && config.isNotBlank()) { action -> run("draft", action) }
-            OutlinedTextField(proposal, { proposal = it; proposalInvalid = false }, label = { Text(stringResource(R.string.identity_proposal)) }, enabled = !busy, isError = proposalInvalid,
-                modifier = Modifier.fillMaxWidth())
-            if (proposalInvalid) Text(stringResource(R.string.identity_proposal_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            Text(stringResource(R.string.identity_review), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (proposal.isNotBlank()) {
-                ProposalSummary(proposal)
-                PublicJsonActions(proposal, R.string.identity_proposal, !busy)
+        AnimatedVisibility(visible = showProposal, enter = fadeIn() + expandVertically(), exit = shrinkVertically() + fadeOut()) {
+            Column(verticalArrangement = Arrangement.spacedBy(SPACING_M)) {
+                IdentityActionForm(!busy && config.isNotBlank()) { action -> run("draft", action) }
+                OutlinedTextField(proposal, { proposal = it; proposalInvalid = false }, label = { Text(stringResource(R.string.identity_proposal)) }, enabled = !busy, isError = proposalInvalid,
+                    modifier = Modifier.fillMaxWidth())
+                if (proposalInvalid) Text(stringResource(R.string.identity_proposal_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.identity_review), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (proposal.isNotBlank()) {
+                    ProposalSummary(proposal)
+                    PublicJsonActions(proposal, R.string.identity_proposal, !busy)
+                }
+                val ready = !busy && config.isNotBlank() && proposal.isNotBlank()
+                Row(horizontalArrangement = Arrangement.spacedBy(SPACING_S)) {
+                    ActionButton(R.string.identity_draft, ready, ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("draft") }
+                    ActionButton(R.string.identity_sign, ready, ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("sign") }
+                }
+                ActionButton(R.string.identity_sign_offline, ready, ActionKind.Secondary) { run("sign_offline") }
+                ActionButton(R.string.identity_submit, ready, ActionKind.Confirmed, R.string.identity_submit_confirm) { run("submit") }
             }
-            val ready = !busy && config.isNotBlank() && proposal.isNotBlank()
-            ActionButton(R.string.identity_draft, ready, ActionKind.Secondary) { run("draft") }
-            ActionButton(R.string.identity_sign, ready, ActionKind.Secondary) { run("sign") }
-            ActionButton(R.string.identity_sign_offline, ready, ActionKind.Secondary) { run("sign_offline") }
-            ActionButton(R.string.identity_submit, ready, ActionKind.Confirmed, R.string.identity_submit_confirm) { run("submit") }
         }
     }
 }

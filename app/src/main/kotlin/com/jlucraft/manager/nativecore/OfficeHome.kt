@@ -10,16 +10,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -33,6 +31,7 @@ internal enum class OfficeDestination(val label: Int, val icon: ImageVector) {
     Settings(R.string.navigation_account, Icons.Default.Person),
 }
 
+/** One office page, rendered inside the shell owned by the caller ([ManagementNavigation]); [destination] is required. */
 @Composable
 internal fun OfficeHomeNav(
     state: JSONObject?,
@@ -42,28 +41,25 @@ internal fun OfficeHomeNav(
     pushReady: Boolean?,
     openLeague: (JSONObject, String) -> Unit,
     request: (JSONObject) -> Unit,
+    destination: OfficeDestination,
     modifier: Modifier = Modifier,
     connectionContent: (@Composable () -> Unit)? = null,
-    destination: OfficeDestination? = null,
     onOpenSettings: (() -> Unit)? = null,
+    onOpenEvent: ((String) -> Unit)? = null,
+    onOpenFlow: ((String) -> Unit)? = null,
 ) {
-    var selected by rememberSaveable { mutableStateOf(OfficeDestination.Requests) }
-    LaunchedEffect(focusedNotice) {
-        if (focusedNotice != null) selected = OfficeDestination.Workflows
-    }
-    val content: @Composable () -> Unit = {
-        key(destination ?: selected) {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(SPACING_L),
-                verticalArrangement = Arrangement.spacedBy(SPACING_L),
-            ) {
-                val shown = destination ?: selected
-                if (state == null && shown != OfficeDestination.Settings && connectionContent != null) {
-                    DisconnectedNotice { onOpenSettings?.invoke() ?: run { selected = OfficeDestination.Settings } }
+    ManagerScreenScaffold(stringResource(destination.label), busy, modifier) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(SPACING_L),
+            verticalArrangement = Arrangement.spacedBy(SPACING_L),
+        ) {
+            key(destination) {
+                if (state == null && destination != OfficeDestination.Settings && connectionContent != null) {
+                    DisconnectedNotice { onOpenSettings?.invoke() }
                 }
-                when (shown) {
-                    OfficeDestination.Requests -> OfficeCard(state, busy, identity, send = request)
-                    OfficeDestination.Approvals -> OfficeCard(state, busy, identity, approvals = true, send = request)
+                when (destination) {
+                    OfficeDestination.Requests -> OfficeCard(state, busy, identity, showTitle = false, send = request, onOpenEvent = onOpenEvent)
+                    OfficeDestination.Approvals -> OfficeCard(state, busy, identity, approvals = true, showTitle = false, send = request, onOpenFlow = onOpenFlow)
                     OfficeDestination.Workflows -> OfficeWorkflowsCard(state, busy, identity, focusedNotice, openLeague, request)
                     OfficeDestination.Settings -> {
                         connectionContent?.invoke()
@@ -77,17 +73,6 @@ internal fun OfficeHomeNav(
             }
         }
     }
-    if (destination != null) content() else NavigationSuiteScaffold(
-        modifier = modifier,
-        navigationSuiteItems = {
-            OfficeDestination.entries.filter { it != OfficeDestination.Settings || connectionContent != null }.forEach { destination ->
-                item(selected = selected == destination, enabled = !busy, onClick = { selected = destination },
-                    icon = { Icon(destination.icon, contentDescription = null) },
-                    label = { Text(stringResource(destination.label)) })
-            }
-        },
-        content = content,
-    )
 }
 
 @Composable

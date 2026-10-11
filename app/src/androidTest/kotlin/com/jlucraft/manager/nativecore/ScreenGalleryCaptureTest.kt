@@ -185,10 +185,13 @@ class ScreenGalleryCaptureTest {
     }
 
     @Test fun officeHomeNavigationStates() {
+        var selected by mutableStateOf(OfficeDestination.Requests)
         compose.setContent {
             JluManagerTheme {
                 Surface(Modifier.fillMaxSize()) {
-                    OfficeHomeNav(officeHomeState, false, "device-fixture", null, true, { _, _ -> }, {})
+                    ManagementNavigation(true, selected, false, {}, { selected = it }) {
+                        OfficeHomeNav(officeHomeState, false, "device-fixture", null, true, { _, _ -> }, {}, destination = selected)
+                    }
                 }
             }
         }
