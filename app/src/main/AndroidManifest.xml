@@ -3,7 +3,7 @@
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
   <uses-permission android:name="android.permission.USE_BIOMETRIC" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-  <application android:name="com.jlucraft.manager.nativecore.ManagerApplication" android:label="高校联盟管理" android:allowBackup="false" android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+  <application android:name="com.jlucraft.manager.nativecore.ManagerApplication" android:label="@string/app_name" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
     <service android:name="com.jlucraft.manager.nativecore.OfficePushService" android:exported="false"><intent-filter><action android:name="org.unifiedpush.android.connector.PUSH_EVENT" /></intent-filter></service>
     <activity android:name="com.jlucraft.manager.nativecore.MainActivity" android:windowSoftInputMode="adjustResize" android:exported="true">
       <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
