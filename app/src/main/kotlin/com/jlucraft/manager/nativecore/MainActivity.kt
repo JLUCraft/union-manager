@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.core.content.edit
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -208,15 +209,15 @@ class MainActivity : ComponentActivity() {
                                     if (requestOffice) {
                                         pushReady = result.optBoolean("push_ready")
                                         address = requestAddress; peer = requestPeer
-                                        snapshot.optJSONObject("consensus_members")?.let { preferences.edit().putString("office_nodes_genesis",requestGenesis).putString("office_nodes",it.toString()).apply() }
+                                        snapshot.optJSONObject("consensus_members")?.let { preferences.edit { putString("office_nodes_genesis", requestGenesis); putString("office_nodes", it.toString()) } }
                                     }
                                     if (requestOffice && !preferences.getBoolean("notification_permission_requested", false)) {
-                                        preferences.edit().putBoolean("notification_permission_requested", true).apply()
+                                        preferences.edit { putBoolean("notification_permission_requested", true) }
                                         requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
                                     }
                                     val targetPrefix = if (requestOffice) "office" else "league"
-                                    preferences.edit().putString("${targetPrefix}_address", requestAddress).putString("${targetPrefix}_peer", requestPeer).putString("${targetPrefix}_genesis", requestGenesis).apply()
-                                    preferences.edit().putString("address", requestAddress).putString("peer", requestPeer).putString("genesis_hash", requestGenesis).putBoolean("office", requestOffice).apply()
+                                    preferences.edit { putString("${targetPrefix}_address", requestAddress); putString("${targetPrefix}_peer", requestPeer); putString("${targetPrefix}_genesis", requestGenesis) }
+                                    preferences.edit { putString("address", requestAddress); putString("peer", requestPeer); putString("genesis_hash", requestGenesis); putBoolean("office", requestOffice) }
                                     message = if (action == null) getString(R.string.management_synced) else getString(R.string.management_done)
                                 }
                             } catch (error: Exception) {
@@ -316,14 +317,14 @@ class MainActivity : ComponentActivity() {
                     SectionHeader(stringResource(R.string.profile_section_governance))
                     IdentityCard(identityConfiguration, identity, busy, identityDirectory, address = address, peer = peer, onConfig = { value ->
                         identityConfiguration = value
-                        preferences.edit().putString("identity_configuration", value).apply()
+                        preferences.edit { putString("identity_configuration", value) }
                         state = null
                         message = getString(R.string.identity_saved)
                     }, proposalState = identityProposal,
                         fetch = { reply -> fetchGenesis(JSONObject().put("address", address).put("peer", peer), reply) },
                         onOfficeGenesis = { pin ->
                             genesisHash = pin
-                            preferences.edit().putString("office_genesis", pin).apply()
+                            preferences.edit { putString("office_genesis", pin) }
                         },
                         onFetchFailed = { message = getString(R.string.identity_fetch_failed) },
                     ) { input, reply -> executeOps(input, reply, true) }

@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import androidx.core.content.edit
 import android.content.Intent
 import android.content.pm.PackageManager
 import com.jlucraft.manager.R
@@ -36,7 +37,7 @@ object OfficePush {
         if (!info.optBoolean("ok")) return false
         val vapid = info.getString("vapid")
         val id = instance(genesis, UnionNative.peerId(secret), vapid)
-        prefs(context).edit().putString("active", id).putString("vapid", vapid).apply()
+        prefs(context).edit { putString("active", id); putString("vapid", vapid) }
         val state = data(context, id)
         if (state.getString("endpoint", null) == null) select(context, id, reset = true)
         else UnifiedPush.register(context, instance = id, vapid = vapid)
@@ -50,7 +51,7 @@ object OfficePush {
         if (challenge != null) {
             val verified = call(JSONObject().put("type", "verify").put("challenge", challenge))
             if (verified.optBoolean("ok")) {
-                state.edit().remove("challenge").putBoolean("verified", true).apply()
+                state.edit { remove("challenge"); putBoolean("verified", true) }
                 return true
             }
         }
@@ -60,7 +61,7 @@ object OfficePush {
         repeat(WAIT_STEPS) { if (state.getString("challenge", null) == null && !state.getBoolean("verified", false)) delay(WAIT_MS) }
         state.getString("challenge", null)?.let {
             if (call(JSONObject().put("type", "verify").put("challenge", it)).optBoolean("ok")) {
-                state.edit().remove("challenge").putBoolean("verified", true).apply()
+                state.edit { remove("challenge"); putBoolean("verified", true) }
             }
         }
         return state.getBoolean("verified", false)
@@ -74,7 +75,7 @@ object OfficePush {
         val candidate = UnifiedPush.getDistributors(context).distinct()
             .sortedWith(compareBy<String> { it != context.packageName }.thenBy { it })
             .firstOrNull { it !in attempted } ?: return
-        state.edit().putStringSet("attempted", attempted + candidate).apply()
+        state.edit { putStringSet("attempted", attempted + candidate) }
         UnifiedPush.saveDistributor(context, candidate)
         UnifiedPush.register(context, instance = id, vapid = prefs(context).getString("vapid", null))
     }
@@ -84,16 +85,22 @@ object OfficePush {
         val keys = endpoint.pubKeySet ?: return
         val state = data(context, id)
         val changed = state.getString("endpoint", null) != endpoint.url || state.getString("p256dh", null) != keys.pubKey
-        val edit = state.edit().putString("endpoint", endpoint.url).putString("p256dh", keys.pubKey).putString("auth", keys.auth)
-        if (changed) edit.remove("challenge").putBoolean("verified", false)
-        edit.apply()
+        state.edit {
+            putString("endpoint", endpoint.url)
+            putString("p256dh", keys.pubKey)
+            putString("auth", keys.auth)
+            if (changed) {
+                remove("challenge")
+                putBoolean("verified", false)
+            }
+        }
     }
-    fun clear(context: Context, id: String) { data(context, id).edit().remove("endpoint").remove("challenge").putBoolean("verified", false).apply() }
+    fun clear(context: Context, id: String) { data(context, id).edit { remove("endpoint"); remove("challenge"); putBoolean("verified", false) } }
     fun message(context: Context, id: String, message: PushMessage) {
         if (!message.decrypted || prefs(context).getString("active", null) != id) return
         val payload = runCatching { JSONObject(message.content.toString(Charsets.UTF_8)) }.getOrNull() ?: return
         if (payload.has("challenge")) {
-            data(context, id).edit().putString("challenge", payload.getString("challenge")).apply()
+            data(context, id).edit { putString("challenge", payload.getString("challenge")) }
             return
         }
         val notice = payload.optString("notice")
