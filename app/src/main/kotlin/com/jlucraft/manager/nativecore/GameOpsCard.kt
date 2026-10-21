@@ -7,7 +7,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.dp
 import com.jlucraft.manager.R
 import org.json.JSONObject
 
@@ -82,9 +81,9 @@ internal fun GameOpsContent(
         }
         if (state.failed) Text(stringResource(R.string.ops_error), color = MaterialTheme.colorScheme.error)
         state.logs?.takeIf { it.isNotEmpty() }?.let { logs ->
-            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
+            DetailSurface {
                 SelectionContainer {
-                    Text(logs, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(SPACING_M))
+                    Text(logs, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
                 }
             }
         }

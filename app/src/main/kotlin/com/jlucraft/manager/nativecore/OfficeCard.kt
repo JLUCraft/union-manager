@@ -63,7 +63,7 @@ fun OfficeCard(
             key(eventId) {
                 val event = events.getJSONObject(eventId)
                 val phase = event.optString("phase")
-                if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                if (index > 0) HorizontalDivider()
                 Column(verticalArrangement = Arrangement.spacedBy(SPACING_S)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = {
@@ -115,7 +115,7 @@ fun OfficeCard(
         flows?.keys()?.asSequence()?.toList()?.sorted()?.forEachIndexed { index, flowId ->
             key(flowId) {
                 Column(Modifier.testTag("flow:$flowId"), verticalArrangement = Arrangement.spacedBy(SPACING_S)) {
-                if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                if (index > 0) HorizontalDivider()
                 val flow = flows.getJSONObject(flowId)
                 val status = flow.optString("status")
                 val payload = flow.optJSONObject("payload")

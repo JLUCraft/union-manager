@@ -30,9 +30,10 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -75,7 +76,6 @@ val SPACING_S = 8.dp
 val SPACING_M = 12.dp
 val SPACING_L = 16.dp
 val SPACING_XL = 32.dp
-val DETAIL_SURFACE_CORNER = 12.dp
 val LOCKED_CONTENT_MAX_WIDTH = 360.dp
 const val DISABLED_BORDER_ALPHA = 0.38f
 
@@ -143,15 +143,17 @@ internal fun DateTimeField(value: String, label: String, enabled: Boolean, modif
 
 private enum class PickerStep { Closed, Date, Time }
 
+/** Card with the standard padding/title/status header. [emphasized] cards are elevated; secondary or informational content passes `false` for the flat tonal variant so the page keeps a clear container hierarchy. */
 @Composable
 fun ManagerCard(
     title: String? = null,
     helper: String? = null,
     statusText: String? = null,
     statusActive: Boolean = false,
+    emphasized: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+    val body: @Composable () -> Unit = {
         Column(
             modifier = Modifier.padding(SPACING_L),
             verticalArrangement = Arrangement.spacedBy(SPACING_M),
@@ -171,6 +173,27 @@ fun ManagerCard(
             }
             content()
         }
+    }
+    if (emphasized) ElevatedCard(modifier = Modifier.fillMaxWidth()) { body() } else Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) { body() }
+}
+
+/** Quiet panel nested in a card (scoreboard, dispute, log): tonal surface with the standard inner padding. */
+@Composable
+internal fun DetailSurface(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.medium,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(SPACING_M),
+            verticalArrangement = Arrangement.spacedBy(SPACING_XS),
+            content = content,
+        )
     }
 }
 
@@ -256,7 +279,7 @@ internal fun SectionHeader(text: String, modifier: Modifier = Modifier) {
         text,
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier.padding(horizontal = SPACING_L, vertical = SPACING_M),
+        modifier = modifier.padding(vertical = SPACING_XS),
     )
 }
 

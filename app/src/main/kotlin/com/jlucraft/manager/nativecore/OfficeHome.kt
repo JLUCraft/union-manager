@@ -77,7 +77,7 @@ internal fun OfficeHomeNav(
 
 @Composable
 private fun DisconnectedNotice(openSettings: () -> Unit) {
-    ManagerCard(title = stringResource(R.string.office_disconnected_title), helper = stringResource(R.string.office_disconnected_help)) {
+    ManagerCard(title = stringResource(R.string.office_disconnected_title), helper = stringResource(R.string.office_disconnected_help), emphasized = false) {
         Button(onClick = openSettings, modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET)) {
             Text(stringResource(R.string.office_disconnected_action))
         }

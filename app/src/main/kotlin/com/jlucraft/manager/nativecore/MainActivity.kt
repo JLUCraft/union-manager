@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 
 import com.jlucraft.manager.R
 import androidx.compose.ui.res.stringResource
@@ -370,16 +369,13 @@ class MainActivity : ComponentActivity() {
                                     textAlign = TextAlign.Center,
                                 )
                                 if (message.isNotBlank()) {
-                                    Surface(
-                                        shape = RoundedCornerShape(DETAIL_SURFACE_CORNER),
-                                        color = MaterialTheme.colorScheme.surfaceVariant,
-                                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    ) {
+                                    DetailSurface {
                                         Text(
                                             message,
                                             style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             textAlign = TextAlign.Center,
-                                            modifier = Modifier.padding(horizontal = SPACING_L, vertical = SPACING_M),
+                                            modifier = Modifier.fillMaxWidth(),
                                         )
                                     }
                                 }

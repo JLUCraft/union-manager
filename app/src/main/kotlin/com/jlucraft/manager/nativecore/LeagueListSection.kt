@@ -6,9 +6,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,11 +19,10 @@ import androidx.compose.ui.unit.dp
 import com.jlucraft.manager.R
 import org.json.JSONObject
 
-
 @Composable
 fun LeagueListSection(state: JSONObject?, busy: Boolean, onStart: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(SPACING_M)) {
-        Text(stringResource(R.string.league_list_title), style = MaterialTheme.typography.titleMedium)
+        SectionHeader(stringResource(R.string.league_list_title))
         if (state == null) {
             Text(
                 stringResource(R.string.league_list_disconnected),
@@ -51,22 +50,20 @@ fun LeagueListSection(state: JSONObject?, busy: Boolean, onStart: (String) -> Un
 private fun LeagueCard(id: String, item: JSONObject, busy: Boolean, onStart: (String) -> Unit) {
     val phase = item.getString("phase")
     val (phaseLabel, phaseActive) = phaseStatus(phase)
-    val rules = item.optJSONObject("rules")
+    val rules = item.getJSONObject("rules")
     ManagerCard(
         title = id,
-        helper = if (rules != null) {
-            stringResource(
-                R.string.governance_rules,
-                rules.optInt("seats"),
-                stringResource(if (rules.optBoolean("cross_club")) R.string.league_cross_club else R.string.league_same_school),
-            )
-        } else null,
+        helper = stringResource(
+            R.string.governance_rules,
+            rules.optInt("seats"),
+            stringResource(if (rules.optBoolean("cross_club")) R.string.league_cross_club else R.string.league_same_school),
+        ),
         statusText = phaseLabel,
         statusActive = phaseActive,
     ) {
         Text(stringResource(R.string.league_teams_title), style = MaterialTheme.typography.titleSmall)
-        val teams = item.optJSONObject("teams")
-        if (teams == null || teams.length() == 0) {
+        val teams = item.getJSONObject("teams")
+        if (teams.length() == 0) {
             Text(
                 stringResource(R.string.league_no_teams),
                 style = MaterialTheme.typography.bodySmall,
@@ -86,8 +83,9 @@ private fun LeagueCard(id: String, item: JSONObject, busy: Boolean, onStart: (St
                 Text(stringResource(R.string.league_lock_and_start))
             }
         }
-        Scoreboard(stringResource(R.string.league_team_scoreboard), item.optJSONObject("team_scores") ?: JSONObject())
-        Scoreboard(stringResource(R.string.league_player_scoreboard), item.optJSONObject("player_scores") ?: JSONObject())
+        HorizontalDivider()
+        Scoreboard(stringResource(R.string.league_team_scoreboard), item.getJSONObject("team_scores"))
+        Scoreboard(stringResource(R.string.league_player_scoreboard), item.getJSONObject("player_scores"))
     }
 }
 
@@ -113,16 +111,16 @@ private fun TeamRow(team: String, roster: JSONObject) {
         Text(
             stringResource(if (registered) R.string.league_registered else R.string.league_not_registered),
             style = MaterialTheme.typography.labelMedium,
-            color = if (registered) MaterialTheme.colorScheme.secondary
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (registered) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
+/** Secondary stats block: a [DetailSurface] keeps it subordinate to the league card. */
 @Composable
 private fun Scoreboard(title: String, scores: JSONObject) {
     val entries = scores.keys().asSequence().toList().sortedByDescending { scores.getLong(it) }
-    Column(verticalArrangement = Arrangement.spacedBy(SPACING_XS)) {
+    DetailSurface {
         Text(title, style = MaterialTheme.typography.titleSmall)
         if (entries.isEmpty()) {
             Text(
