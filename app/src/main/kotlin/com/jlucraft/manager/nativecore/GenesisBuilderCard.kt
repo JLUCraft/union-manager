@@ -15,13 +15,14 @@ import java.util.UUID
 @Composable
 internal fun PublicJsonActions(value: String, label: Int, enabled: Boolean = true) {
     val context = LocalContext.current
+    val labelText = stringResource(label)
     Row(horizontalArrangement = Arrangement.spacedBy(SPACING_S), modifier = Modifier.fillMaxWidth()) {
-        OutlinedButton(enabled = enabled && value.isNotBlank(), onClick = { copyToClipboard(context, context.getString(label), value) }, modifier = Modifier.weight(1f).heightIn(min = MIN_TOUCH_TARGET)) {
+        OutlinedButton(enabled = enabled && value.isNotBlank(), onClick = { copyToClipboard(context, labelText, value) }, modifier = Modifier.weight(1f).heightIn(min = MIN_TOUCH_TARGET)) {
             Text(stringResource(R.string.identity_export_copy))
         }
         OutlinedButton(enabled = enabled && value.isNotBlank(), onClick = {
             val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, value)
-            context.startActivity(Intent.createChooser(send, context.getString(label)))
+            context.startActivity(Intent.createChooser(send, labelText))
         }, modifier = Modifier.weight(1f).heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(R.string.identity_export_share)) }
     }
 }
@@ -65,7 +66,7 @@ internal fun GenesisBuilderCard(draft: String, onChange: (String) -> Unit) {
         }
         OutlinedButton(onClick = { change("founders", JSONArray(founders.toString()).put(JSONObject().put("row_id", UUID.randomUUID().toString()))) }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(R.string.genesis_add_founder)) }
         OutlinedTextField(input.optString("quorum"), { change("quorum", it) }, label = { Text(stringResource(R.string.identity_field_quorum)) }, modifier = Modifier.fillMaxWidth())
-        ActionButton(R.string.genesis_validate, true, ActionKind.Secondary) {
+        ActionButton(R.string.genesis_validate, true, kind = ActionKind.Secondary) {
             try {
                 val entries = JSONArray()
                 for (index in 0 until founders.length()) {

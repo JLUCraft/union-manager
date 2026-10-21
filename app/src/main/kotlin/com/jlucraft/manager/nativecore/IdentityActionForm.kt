@@ -107,7 +107,7 @@ internal fun IdentityActionForm(enabled: Boolean, onDraft: (JSONObject) -> Unit)
         }
     }
     if (invalid) Text(stringResource(R.string.identity_form_invalid), color = MaterialTheme.colorScheme.error)
-    ActionButton(R.string.identity_draft, enabled, ActionKind.Secondary) {
+    ActionButton(R.string.identity_draft, enabled, kind = ActionKind.Secondary) {
         try {
             val request = JSONObject().put("operation", "build_action").put("action", selected).put("fields", JSONObject(values.toMap()))
             onDraft(JSONObject(UnionNative.management(request.toString())))

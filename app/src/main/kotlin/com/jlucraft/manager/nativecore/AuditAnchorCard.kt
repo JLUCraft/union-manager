@@ -26,7 +26,7 @@ internal fun AuditAnchorCard(state: JSONObject?, device: String, busy: Boolean, 
         OutlinedTextField(id, { id = it; invalid = false }, enabled = !busy, label = { Text(stringResource(R.string.audit_anchor_id)) }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(digest, { digest = it; invalid = false }, enabled = !busy, label = { Text(stringResource(R.string.audit_anchor_digest)) }, modifier = Modifier.fillMaxWidth())
         if (invalid) Text(stringResource(R.string.audit_anchor_invalid), color = MaterialTheme.colorScheme.error)
-        ActionButton(R.string.audit_anchor_submit, !busy && id.isNotBlank() && digest.isNotBlank(), ActionKind.Confirmed, R.string.audit_anchor_confirm) {
+        ActionButton(R.string.audit_anchor_submit, !busy && id.isNotBlank() && digest.isNotBlank(), kind = ActionKind.Confirmed, confirmText = R.string.audit_anchor_confirm) {
             try {
                 val action = UnionNative.management(JSONObject().put("operation", "build_anchor").put("id", id.trim()).put("digest", digest.trim()).toString())
                 submit(JSONObject(action)); invalid = false

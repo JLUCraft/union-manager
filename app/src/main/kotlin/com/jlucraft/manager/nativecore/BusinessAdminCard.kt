@@ -36,12 +36,12 @@ internal fun BusinessAdminCard(state: JSONObject?, device: String, busy: Boolean
         committedMember?.let { current ->
             val knownRoles = (current.optJSONArray("roles") ?: JSONArray()).strings()
             Text(stringResource(R.string.business_current_roles, knownRoles.joinToString(", ")))
-            ActionButton(R.string.business_load_roles, !busy, ActionKind.Secondary) {
+            ActionButton(R.string.business_load_roles, !busy, kind = ActionKind.Secondary) {
                 roles = knownRoles.joinToString("\n"); preview = null
             }
         }
         OutlinedTextField(roles, { roles = it; preview = null }, enabled = !busy, label = { Text(stringResource(R.string.business_roles)) }, supportingText = { Text(stringResource(R.string.business_roles_hint)) }, modifier = Modifier.fillMaxWidth())
-        ActionButton(R.string.business_preview, !busy && member.isNotBlank(), ActionKind.Secondary) {
+        ActionButton(R.string.business_preview, !busy && member.isNotBlank(), kind = ActionKind.Secondary) {
             prepare(JSONObject().put("operation", "build_roles").put("member", member).put("roles", JSONArray(roles.lines().filter { it.isNotBlank() })))
         }
         HorizontalDivider()
@@ -49,7 +49,7 @@ internal fun BusinessAdminCard(state: JSONObject?, device: String, busy: Boolean
         Text(stringResource(R.string.business_replicas_hint), style = MaterialTheme.typography.bodySmall)
         val committed = state.optJSONObject("consensus_members") ?: JSONObject()
         if (committed.length() == 0) Text(stringResource(R.string.business_replicas_empty)) else IdentifierDetails(committed.toString(2))
-        ActionButton(R.string.business_replicas_load, !busy && committed.length() > 0, ActionKind.Secondary) {
+        ActionButton(R.string.business_replicas_load, !busy && committed.length() > 0, kind = ActionKind.Secondary) {
             changeReplicas(committed.keys().asSequence().map { id ->
                 val node = committed.getJSONObject(id)
                 ReplicaDraft(id = id, peer = node.getString("peer"), addresses = node.getJSONArray("addresses").strings().joinToString("\n"))
@@ -61,8 +61,8 @@ internal fun BusinessAdminCard(state: JSONObject?, device: String, busy: Boolean
             OutlinedTextField(row.addresses, { value -> editReplica(row.rowId) { it.copy(addresses = value) } }, enabled = !busy, label = { Text(stringResource(R.string.business_replica_addresses)) }, modifier = Modifier.fillMaxWidth())
             TextButton(enabled = !busy, onClick = { changeReplicas(replicas.filter { it.rowId != row.rowId }) }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(R.string.business_replica_remove)) }
         } }
-        ActionButton(R.string.business_replica_add, !busy, ActionKind.Secondary) { changeReplicas(replicas + ReplicaDraft()) }
-        ActionButton(R.string.business_replicas_preview, !busy && replicas.isNotEmpty(), ActionKind.Secondary) {
+        ActionButton(R.string.business_replica_add, !busy, kind = ActionKind.Secondary) { changeReplicas(replicas + ReplicaDraft()) }
+        ActionButton(R.string.business_replicas_preview, !busy && replicas.isNotEmpty(), kind = ActionKind.Secondary) {
             try {
                 val members = JSONArray()
                 replicas.forEach { row -> members.put(JSONObject().put("id", row.id.trim()).put("node", JSONObject().put("peer", row.peer.trim()).put("addresses", JSONArray(row.addresses.lines().map { it.trim() }.filter { it.isNotEmpty() })))) }
@@ -73,7 +73,7 @@ internal fun BusinessAdminCard(state: JSONObject?, device: String, busy: Boolean
         preview?.let { action ->
             Text(stringResource(R.string.business_review))
             IdentifierDetails(action.toString(2))
-            ActionButton(R.string.business_submit, !busy, ActionKind.Confirmed, R.string.business_confirm) { submit(action) }
+            ActionButton(R.string.business_submit, !busy, kind = ActionKind.Confirmed, confirmText = R.string.business_confirm) { submit(action) }
         }
     }
 }

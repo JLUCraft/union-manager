@@ -230,14 +230,15 @@ fun IdentifierDetails(value: String, label: Int = R.string.identifier_details) {
     var expanded by remember(value) { mutableStateOf(false) }
     var copied by remember(value) { mutableStateOf(false) }
     val context = LocalContext.current
+    val labelText = stringResource(label)
     TextButton(onClick = { expanded = !expanded }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) {
-        Text(stringResource(label))
+        Text(labelText)
     }
     AnimatedVisibility(visible = expanded, enter = fadeIn() + expandVertically(), exit = shrinkVertically() + fadeOut()) {
         Column {
             SelectionContainer { Text(value, style = MaterialTheme.typography.bodySmall) }
             TextButton(onClick = {
-                copyToClipboard(context, context.getString(R.string.identifier_details), value)
+                copyToClipboard(context, labelText, value)
                 copied = true
             }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(if (copied) R.string.identifier_copied else R.string.identifier_copy)) }
         }
@@ -306,9 +307,16 @@ internal fun CollapsibleSection(
 internal enum class ActionKind { Primary, Secondary, Confirmed, Destructive }
 
 @Composable
-internal fun ActionButton(label: Int, enabled: Boolean, kind: ActionKind = ActionKind.Primary, confirmText: Int = R.string.confirm_irreversible, modifier: Modifier = Modifier.fillMaxWidth(), click: () -> Unit) {
+internal fun ActionButton(
+    label: Int,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    kind: ActionKind = ActionKind.Primary,
+    confirmText: Int = R.string.confirm_irreversible,
+    click: () -> Unit,
+) {
     var confirming by remember { mutableStateOf(false) }
-    val buttonModifier = modifier.heightIn(min = MIN_TOUCH_TARGET)
+    val buttonModifier = modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET)
     val onClick = if (kind == ActionKind.Destructive || kind == ActionKind.Confirmed) ({ confirming = true }) else click
     when (kind) {
         ActionKind.Primary, ActionKind.Confirmed -> Button(onClick = onClick, enabled = enabled, modifier = buttonModifier) { Text(stringResource(label)) }

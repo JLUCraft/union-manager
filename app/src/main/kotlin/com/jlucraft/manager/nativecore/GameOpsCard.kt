@@ -74,7 +74,7 @@ internal fun GameOpsContent(
             Row(horizontalArrangement = Arrangement.spacedBy(SPACING_S), modifier = Modifier.fillMaxWidth()) {
                 row.forEach { (op, label) ->
                     ActionButton(label, enabled && state.selected.isNotBlank(),
-                        if (op == "kill") ActionKind.Destructive else ActionKind.Secondary,
+                        kind = if (op == "kill") ActionKind.Destructive else ActionKind.Secondary,
                         modifier = Modifier.weight(1f)) { onRun(op) }
                 }
             }

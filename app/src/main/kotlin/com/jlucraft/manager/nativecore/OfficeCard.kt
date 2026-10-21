@@ -199,12 +199,12 @@ internal fun OfficeEventDetail(
     if (manage && phase == "approved") ActionButton(R.string.office_publish, enabled) { act("events.publish", "id", eventId) }
     if (phase == "open") {
         val signedUp = state.optJSONObject("signups")?.optJSONArray(eventId).containsString(member)
-        ActionButton(if (signedUp) R.string.office_cancel_signup else R.string.office_signup, enabled && member != null, if (signedUp) ActionKind.Secondary else ActionKind.Primary) {
+        ActionButton(if (signedUp) R.string.office_cancel_signup else R.string.office_signup, enabled && member != null, kind = if (signedUp) ActionKind.Secondary else ActionKind.Primary) {
             act(if (signedUp) "events.cancel" else "events.signup", "id", eventId)
         }
-        if (manage) ActionButton(R.string.office_finish, enabled, ActionKind.Secondary) { act("events.finish", "id", eventId) }
+        if (manage) ActionButton(R.string.office_finish, enabled, kind = ActionKind.Secondary) { act("events.finish", "id", eventId) }
     }
-    if (manage && phase !in setOf("done", "cancelled")) ActionButton(R.string.office_cancel, enabled, ActionKind.Destructive) { act("events.cancel_event", "id", eventId) }
+    if (manage && phase !in setOf("done", "cancelled")) ActionButton(R.string.office_cancel, enabled, kind = ActionKind.Destructive) { act("events.cancel_event", "id", eventId) }
     }
 }
 
@@ -236,8 +236,8 @@ internal fun OfficeFlowDetail(
         val runs = flow.optJSONArray("records")?.optJSONObject(flow.optInt("current"))?.optJSONArray("ai_runs")
         val last = runs?.optJSONObject(runs.length() - 1)
         val retryable = last != null && !last.isNull("error") && last.isNull("output") && !last.optBoolean("retry_requested") && runs.length() < 8
-        ActionButton(R.string.office_ai_retry, enabled && retryable, ActionKind.Secondary) { act("flows.retry_ai", "instance", flowId) }
-        ActionButton(R.string.office_poke, enabled, ActionKind.Secondary) { act("flows.poke", "instance", flowId) }
+        ActionButton(R.string.office_ai_retry, enabled && retryable, kind = ActionKind.Secondary) { act("flows.retry_ai", "instance", flowId) }
+        ActionButton(R.string.office_poke, enabled, kind = ActionKind.Secondary) { act("flows.poke", "instance", flowId) }
     }
     if (status == "active" && !ai) {
         var comment by rememberSaveable { mutableStateOf("") }
@@ -246,7 +246,7 @@ internal fun OfficeFlowDetail(
         ActionButton(R.string.office_approve, enabled && reviewable && comment.isNotBlank()) {
             send(JSONObject().put("type", "local.flows.approve").put("instance", flowId).put("comment", comment))
         }
-        ActionButton(R.string.office_reject, enabled && comment.isNotBlank(), ActionKind.Destructive) {
+        ActionButton(R.string.office_reject, enabled && comment.isNotBlank(), kind = ActionKind.Destructive) {
             send(JSONObject().put("type", "local.flows.reject").put("instance", flowId).put("comment", comment))
         }
         var delegating by rememberSaveable { mutableStateOf(false) }
@@ -259,7 +259,7 @@ internal fun OfficeFlowDetail(
         }
     }
     if (status == "approved") ActionButton(R.string.office_execute, enabled && reviewable) { act("flows.execute", "instance", flowId) }
-    if (status in setOf("active", "approved")) ActionButton(R.string.office_cancel_flow, enabled, ActionKind.Destructive) { act("flows.cancel", "instance", flowId) }
+    if (status in setOf("active", "approved")) ActionButton(R.string.office_cancel_flow, enabled, kind = ActionKind.Destructive) { act("flows.cancel", "instance", flowId) }
     }
 }
 

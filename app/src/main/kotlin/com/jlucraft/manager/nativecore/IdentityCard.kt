@@ -112,7 +112,7 @@ internal fun IdentityCard(
             }
         }
         if (config.isBlank()) {
-            ActionButton(R.string.identity_fetch, !busy && !fetching && address.isNotBlank() && peer.isNotBlank(), ActionKind.Secondary) {
+            ActionButton(R.string.identity_fetch, !busy && !fetching && address.isNotBlank() && peer.isNotBlank(), kind = ActionKind.Secondary) {
                 fetching = true
                 fetch { result ->
                     fetching = false
@@ -148,8 +148,8 @@ internal fun IdentityCard(
             Text(stringResource(if (showConfiguration) R.string.identity_hide_configuration else R.string.identity_show_configuration))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(SPACING_S)) {
-            ActionButton(R.string.identity_inspect, !busy && config.isNotBlank(), ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("inspect") }
-            ActionButton(R.string.identity_sync, !busy && config.isNotBlank(), ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("sync") }
+            ActionButton(R.string.identity_inspect, !busy && config.isNotBlank(), kind = ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("inspect") }
+            ActionButton(R.string.identity_sync, !busy && config.isNotBlank(), kind = ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("sync") }
         }
         if (state.availability == IdentityAvailability.Unavailable) {
             Text(stringResource(R.string.identity_unavailable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -184,11 +184,11 @@ internal fun IdentityCard(
                 }
                 val ready = !busy && config.isNotBlank() && proposal.isNotBlank()
                 Row(horizontalArrangement = Arrangement.spacedBy(SPACING_S)) {
-                    ActionButton(R.string.identity_draft, ready, ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("draft") }
-                    ActionButton(R.string.identity_sign, ready, ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("sign") }
+                    ActionButton(R.string.identity_draft, ready, kind = ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("draft") }
+                    ActionButton(R.string.identity_sign, ready, kind = ActionKind.Secondary, modifier = Modifier.weight(1f)) { run("sign") }
                 }
-                ActionButton(R.string.identity_sign_offline, ready, ActionKind.Secondary) { run("sign_offline") }
-                ActionButton(R.string.identity_submit, ready, ActionKind.Confirmed, R.string.identity_submit_confirm) { run("submit") }
+                ActionButton(R.string.identity_sign_offline, ready, kind = ActionKind.Secondary) { run("sign_offline") }
+                ActionButton(R.string.identity_submit, ready, kind = ActionKind.Confirmed, confirmText = R.string.identity_submit_confirm) { run("submit") }
             }
         }
     }
