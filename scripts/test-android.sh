@@ -5,7 +5,7 @@ mode=${1:-unit}
 runner_args=()
 case "$mode" in
   unit) tasks=(:app:testDebugUnitTest) ;;
-  build) tasks=(:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest) ;;
+  build) tasks=(:app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest) ;;
   connected)
     : "${ANDROID_SERIAL:?Set ANDROID_SERIAL to the dedicated test device or emulator}"
     tasks=(:app:testDebugUnitTest :app:connectedDebugAndroidTest)
