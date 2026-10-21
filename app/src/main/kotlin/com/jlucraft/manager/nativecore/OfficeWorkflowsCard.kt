@@ -14,14 +14,14 @@ private fun JSONObject.sortedKeys() = keys().asSequence().toList().sorted()
 private fun Iterable<String>.json() = JSONArray(toList())
 
 @Composable
-private fun WorkflowField(label: Int, enabled: Boolean, initial: String = ""): String {
+private fun workflowField(label: Int, enabled: Boolean, initial: String = ""): String {
     var value by remember { mutableStateOf(initial) }
     OutlinedTextField(value, { value = it }, label = { Text(stringResource(label)) }, enabled = enabled,
         modifier = Modifier.fillMaxWidth())
     return value.trim()
 }
 @Composable
-private fun WorkflowDateField(label: Int, enabled: Boolean): String {
+private fun workflowDateField(label: Int, enabled: Boolean): String {
     var value by remember { mutableStateOf("") }
     DateTimeField(value, stringResource(label), enabled) { value = it }
     return value.trim()
@@ -38,7 +38,7 @@ private fun WorkflowAction(label: Int, enabled: Boolean, action: () -> Unit) {
     }
 }
 @Composable
-private fun WorkflowSelection(items: JSONObject, enabled: Boolean): Set<String> {
+private fun workflowSelection(items: JSONObject, enabled: Boolean): Set<String> {
     var selection by remember { mutableStateOf(emptySet<String>()) }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(SPACING_S), verticalArrangement = Arrangement.spacedBy(SPACING_S)) {
         items.sortedKeys().forEach { id -> key(id) {
@@ -92,13 +92,13 @@ fun OfficeWorkflowsCard(state: JSONObject?, busy: Boolean, device: String, focus
                     val plan = plans.optJSONObject(chosen)
                     if (plan == null && event.optString("phase") == "draft") {
                         Text(stringResource(R.string.workflow_schools))
-                        val schools = WorkflowSelection(profiles, enabled)
+                        val schools = workflowSelection(profiles, enabled)
                         Text(stringResource(R.string.workflow_participants))
-                        val participants = WorkflowSelection(JSONObject().also { map -> members.sortedKeys().filter { members.getJSONObject(it).optString("club") in schools }.forEach { map.put(it, members.getJSONObject(it)) } }, enabled)
-                        val candidates = if (kind == "online") { Text(stringResource(R.string.workflow_candidates)); WorkflowSelection(resources, enabled) } else emptySet()
-                        val opens = parseLocalDateTime(WorkflowDateField(R.string.workflow_checkin_opens, enabled))
-                        val closes = parseLocalDateTime(WorkflowDateField(R.string.workflow_checkin_closes, enabled))
-                        val ends = parseLocalDateTime(WorkflowDateField(R.string.workflow_ends, enabled))
+                        val participants = workflowSelection(JSONObject().also { map -> members.sortedKeys().filter { members.getJSONObject(it).optString("club") in schools }.forEach { map.put(it, members.getJSONObject(it)) } }, enabled)
+                        val candidates = if (kind == "online") { Text(stringResource(R.string.workflow_candidates)); workflowSelection(resources, enabled) } else emptySet()
+                        val opens = parseLocalDateTime(workflowDateField(R.string.workflow_checkin_opens, enabled))
+                        val closes = parseLocalDateTime(workflowDateField(R.string.workflow_checkin_closes, enabled))
+                        val ends = parseLocalDateTime(workflowDateField(R.string.workflow_ends, enabled))
                         WorkflowAction(R.string.workflow_plan, enabled && worker.isNotBlank() && schools.isNotEmpty() && opens != null && closes != null && ends != null && opens < closes && closes < ends && (kind != "online" || candidates.isNotEmpty())) {
                             val selectedSchools = JSONObject()
                             schools.forEach { school -> selectedSchools.put(school, JSONObject().put("kind", profiles.getJSONObject(school).getString("kind"))
@@ -108,9 +108,9 @@ fun OfficeWorkflowsCard(state: JSONObject?, busy: Boolean, device: String, focus
                         }
                     } else if (plan != null) {
                         if (event.optString("phase") == "draft" && plan.isNull("final_epoch")) {
-                            val document = WorkflowField(R.string.workflow_document, enabled)
+                            val document = workflowField(R.string.workflow_document, enabled)
                             val available = JSONObject().also { map -> plan.optJSONArray("candidates")?.let { ids -> (0 until ids.length()).forEach { i -> val id = ids.getString(i); map.put(id, resources.optJSONObject(id) ?: JSONObject()) } } }
-                            val selected = WorkflowSelection(available, enabled)
+                            val selected = workflowSelection(available, enabled)
                             WorkflowAction(R.string.workflow_opinion, enabled && document.isNotBlank()) {
                                 send(JSONObject().put("type", "office.opinion").put("event", chosen).put("document", document).put("games", selected.json()))
                             }
@@ -120,9 +120,9 @@ fun OfficeWorkflowsCard(state: JSONObject?, busy: Boolean, device: String, focus
                                         .put("transcript", JSONObject.NULL))
                                 }
                             }
-                            val points = WorkflowField(R.string.workflow_points, enabled).toLongOrNull()
-                            val material = WorkflowField(R.string.workflow_material, enabled)
-                            val places = WorkflowField(R.string.workflow_top_places, enabled)
+                            val points = workflowField(R.string.workflow_points, enabled).toLongOrNull()
+                            val material = workflowField(R.string.workflow_material, enabled)
+                            val places = workflowField(R.string.workflow_top_places, enabled)
                             WorkflowAction(R.string.workflow_rewards, enabled && points != null && points >= 0 && (places.isBlank() || (places.toIntOrNull() ?: 0) > 0)) {
                                 send(JSONObject().put("type", "office.rewards").put("event", chosen).put("rule", JSONObject().put("points", points)
                                     .put("material", material.takeIf { it.isNotBlank() } ?: JSONObject.NULL).put("top_places", places.toIntOrNull() ?: JSONObject.NULL)))
@@ -163,7 +163,7 @@ fun OfficeWorkflowsCard(state: JSONObject?, busy: Boolean, device: String, focus
                         Text(tasks.getJSONObject(task).optString("title"))
                         val notice = office.optJSONObject("notices")?.optJSONObject(task)
                         run {
-                            val due = parseLocalDateTime(WorkflowDateField(R.string.workflow_task_due, enabled))
+                            val due = parseLocalDateTime(workflowDateField(R.string.workflow_task_due, enabled))
                             WorkflowAction(R.string.workflow_notify, enabled && due != null) { send(JSONObject().put("type", "office.notify").put("task", task).put("due_ms", due)) }
                         }
                         if (notice != null) {
@@ -183,15 +183,15 @@ fun OfficeWorkflowsCard(state: JSONObject?, busy: Boolean, device: String, focus
 @Composable
 private fun Reports(office: JSONObject, club: String?, worker: String, enabled: Boolean, send: (JSONObject) -> Unit) {
     val profile = office.optJSONObject("schools")?.optJSONObject(club ?: "")
-    val id = WorkflowField(R.string.workflow_report_id, enabled)
+    val id = workflowField(R.string.workflow_report_id, enabled)
     var annual by remember { mutableStateOf(false) }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(SPACING_S), verticalArrangement = Arrangement.spacedBy(SPACING_S)) {
         WorkflowChoice(stringResource(R.string.workflow_mua), !annual, enabled) { annual = false }
         if (profile?.optString("kind") == "official") WorkflowChoice(stringResource(R.string.workflow_annual), annual, enabled) { annual = true }
     }
-    val start = parseLocalDateTime(WorkflowDateField(R.string.workflow_period_start, enabled))
-    val end = parseLocalDateTime(WorkflowDateField(R.string.workflow_period_end, enabled))
-    val uploadedRequirements = WorkflowField(R.string.workflow_report_requirements, enabled)
+    val start = parseLocalDateTime(workflowDateField(R.string.workflow_period_start, enabled))
+    val end = parseLocalDateTime(workflowDateField(R.string.workflow_period_end, enabled))
+    val uploadedRequirements = workflowField(R.string.workflow_report_requirements, enabled)
     val requirements = uploadedRequirements.takeIf { it.isNotBlank() } ?: profile?.optString(if (annual) "annual_requirements" else "mua_requirements")
     val recipient = profile?.optString(if (annual) "annual_recipient" else "mua_recipient")
     WorkflowAction(R.string.workflow_report_create, enabled && worker.isNotBlank() && id.isNotBlank() && requirements != null && recipient != null && start != null && end != null && start < end) {
@@ -212,7 +212,7 @@ private fun Reports(office: JSONObject, club: String?, worker: String, enabled: 
         }))
         Text(stringResource(R.string.workflow_evidence)); IdentifierDetails(report.optString("evidence"))
         if (!report.isNull("output")) { Text(stringResource(R.string.workflow_output)); IdentifierDetails(report.getString("output")) }
-        val document = WorkflowField(R.string.workflow_document, enabled)
+        val document = workflowField(R.string.workflow_document, enabled)
         WorkflowAction(R.string.workflow_report_revise, enabled && document.isNotBlank() && report.optString("status") in setOf("draft", "published")) {
             send(JSONObject().put("type", "office.report_revise").put("id", reportId).put("document", document))
         }
@@ -226,10 +226,10 @@ private fun Reports(office: JSONObject, club: String?, worker: String, enabled: 
 @Composable
 private fun WorkflowSetup(office: JSONObject, members: JSONObject, enabled: Boolean, send: (JSONObject) -> Unit) {
     Text(stringResource(R.string.workflow_admin_help))
-    val worker = WorkflowField(R.string.workflow_worker, enabled, office.optJSONObject("automation")?.optString("worker").orEmpty())
-    val model = WorkflowField(R.string.workflow_stage_model, enabled)
-    val limit = WorkflowField(R.string.workflow_stage_tokens, enabled).toIntOrNull()
-    val timeout = WorkflowField(R.string.workflow_stage_timeout, enabled).toLongOrNull()
+    val worker = workflowField(R.string.workflow_worker, enabled, office.optJSONObject("automation")?.optString("worker").orEmpty())
+    val model = workflowField(R.string.workflow_stage_model, enabled)
+    val limit = workflowField(R.string.workflow_stage_tokens, enabled).toIntOrNull()
+    val timeout = workflowField(R.string.workflow_stage_timeout, enabled).toLongOrNull()
     WorkflowAction(R.string.workflow_automation_save, enabled && worker.isNotBlank() && model.isNotBlank() && limit != null && limit in 1..8192 && timeout != null && timeout in 1..43200) {
         send(JSONObject().put("type", "office.automation").put("config", JSONObject().put("worker", worker).put("model", model).put("max_tokens", limit).put("timeout_ms", requireNotNull(timeout) * 60000)))
     }
@@ -241,25 +241,25 @@ private fun WorkflowSetup(office: JSONObject, members: JSONObject, enabled: Bool
     }
     var official by remember { mutableStateOf(false) }
     WorkflowChoice(stringResource(R.string.workflow_official), official, enabled) { official = !official }
-    val muaRequirements = WorkflowField(R.string.workflow_mua_requirements, enabled)
-    val muaRecipient = WorkflowField(R.string.workflow_mua_recipient, enabled)
-    val annualRequirements = WorkflowField(R.string.workflow_annual_requirements, enabled)
-    val annualRecipient = WorkflowField(R.string.workflow_annual_recipient, enabled)
+    val muaRequirements = workflowField(R.string.workflow_mua_requirements, enabled)
+    val muaRecipient = workflowField(R.string.workflow_mua_recipient, enabled)
+    val annualRequirements = workflowField(R.string.workflow_annual_requirements, enabled)
+    val annualRecipient = workflowField(R.string.workflow_annual_recipient, enabled)
     WorkflowAction(R.string.workflow_school_save, enabled && club.isNotBlank() && muaRequirements.isNotBlank() && muaRecipient.isNotBlank() && (!official || (annualRequirements.isNotBlank() && annualRecipient.isNotBlank()))) {
         send(JSONObject().put("type", "office.school_profile").put("club", club).put("profile", JSONObject().put("kind", if (official) "official" else "independent")
             .put("mua_requirements", muaRequirements).put("mua_recipient", muaRecipient).put("annual_requirements", annualRequirements.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
             .put("annual_recipient", annualRecipient.takeIf { it.isNotBlank() } ?: JSONObject.NULL)))
     }
-    val resourceId = WorkflowField(R.string.workflow_resource_id, enabled)
-    val title = WorkflowField(R.string.office_name, enabled)
-    val address = WorkflowField(R.string.workflow_resource_address, enabled)
-    val peer = WorkflowField(R.string.workflow_resource_peer, enabled)
-    val genesis = WorkflowField(R.string.workflow_resource_genesis, enabled)
-    val host = WorkflowField(R.string.workflow_resource_host, enabled)
-    val scorer = WorkflowField(R.string.workflow_resource_scorer, enabled)
-    val seats = WorkflowField(R.string.workflow_resource_seats, enabled).toIntOrNull()
-    val operations = WorkflowField(R.string.workflow_resource_operations, enabled)
-    val instance = WorkflowField(R.string.workflow_resource_instance, enabled)
+    val resourceId = workflowField(R.string.workflow_resource_id, enabled)
+    val title = workflowField(R.string.office_name, enabled)
+    val address = workflowField(R.string.workflow_resource_address, enabled)
+    val peer = workflowField(R.string.workflow_resource_peer, enabled)
+    val genesis = workflowField(R.string.workflow_resource_genesis, enabled)
+    val host = workflowField(R.string.workflow_resource_host, enabled)
+    val scorer = workflowField(R.string.workflow_resource_scorer, enabled)
+    val seats = workflowField(R.string.workflow_resource_seats, enabled).toIntOrNull()
+    val operations = workflowField(R.string.workflow_resource_operations, enabled)
+    val instance = workflowField(R.string.workflow_resource_instance, enabled)
     var cross by remember { mutableStateOf(false) }
     WorkflowChoice(stringResource(R.string.workflow_cross_teams), cross, enabled) { cross = !cross }
     WorkflowAction(R.string.workflow_resource_save, enabled && listOf(resourceId, title, address, peer, genesis, host, scorer, operations, instance).all { it.isNotBlank() } && seats != null && seats > 0) {
