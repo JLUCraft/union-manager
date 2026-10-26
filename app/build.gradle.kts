@@ -13,6 +13,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = 2
         versionName = "0.2.0"
+        manifestPlaceholders["appLabel"] = "@string/app_name"
+        buildConfigField("boolean", "SKIP_BIOMETRIC_FOR_ACCEPTANCE", "false")
     }
     signingConfigs {
         create("production") {
@@ -26,12 +28,27 @@ android {
         }
     }
     buildTypes {
+        getByName("debug") {
+            val skipBiometric = providers.gradleProperty("managerSkipBiometric")
+                .map { it.toBooleanStrict() }.getOrElse(false)
+            buildConfigField("boolean", "SKIP_BIOMETRIC_FOR_ACCEPTANCE", skipBiometric.toString())
+            // Optional second installation of the same source on one physical tablet. The suffix is
+            // debug-only and fixed to .admin, so the release application id never changes.
+            val acceptanceSuffix = providers.gradleProperty("managerAcceptanceSuffix").orNull
+            if (acceptanceSuffix != null) {
+                check(acceptanceSuffix == ".admin") {
+                    "managerAcceptanceSuffix accepts only .admin"
+                }
+                applicationIdSuffix = acceptanceSuffix
+                manifestPlaceholders["appLabel"] = "@string/app_name_admin_acceptance"
+            }
+        }
         getByName("release") {
             signingConfig = signingConfigs.getByName("production")
             isMinifyEnabled = false
         }
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     testOptions { unitTests.all { it.maxHeapSize = "512m"; it.maxParallelForks = 1 } }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21

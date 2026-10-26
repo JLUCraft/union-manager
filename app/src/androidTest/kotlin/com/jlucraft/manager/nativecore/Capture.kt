@@ -1,7 +1,21 @@
 package com.jlucraft.manager.nativecore
 
 import android.os.ParcelFileDescriptor
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.platform.app.InstrumentationRegistry
+
+/**
+ * Bring a node into view when it lives in a scroll container.
+ *
+ * The pinned bottom action bar sits outside the page's scroll container, so a plain
+ * `performScrollTo()` on its buttons throws "no parent layout with a Scroll SemanticsAction".
+ * Scrolling is an optimisation here, not an assertion, so a bar button simply stays put.
+ */
+internal fun SemanticsNodeInteraction.scrollToIfScrollable(): SemanticsNodeInteraction {
+    runCatching { performScrollTo() }
+    return this
+}
 
 internal fun captureEnabled(): Boolean =
     InstrumentationRegistry.getArguments().getString("tutorialCapture") == "true"
