@@ -42,8 +42,11 @@ struct Review {
 pub async fn execute(
     identity: Identity,
     text: &str,
-) -> Result<client::journal::Response<client::office::Office>> {
+) -> Result<client::journal::Response<client::application::Application>> {
     let mut value: serde_json::Value = serde_json::from_str(text).map_err(protocol)?;
+    if value["action"]["type"] == "local.points.request_ai" {
+        return client::points::request_text(identity, value).await;
+    }
     let creating = value["action"]["type"] == "local.events.create";
     let amending = value["action"]["type"] == "local.events.amend";
     let reviewing = matches!(
@@ -54,6 +57,7 @@ pub async fn execute(
         return client::generic::execute(
             identity,
             serde_json::from_value(value).map_err(protocol)?,
+            client::journal::PROTOCOL,
         )
         .await;
     }
@@ -102,7 +106,7 @@ pub async fn execute(
     } else {
         serde_json::from_value(value["action"].take()).map_err(protocol)?
     };
-    let input: client::generic::Input<client::office::Office> =
+    let input: client::generic::Input<client::application::Application> =
         serde_json::from_value(value).map_err(protocol)?;
     let bytes = if let Some(application) = &application {
         application.document()?
@@ -115,11 +119,7 @@ pub async fn execute(
             .read_to_end(&mut bytes)?;
         bytes
     };
-    let peer = input.peer.parse().map_err(protocol)?;
-    let address: client::Multiaddr = input.address.parse().map_err(protocol)?;
-    if !matches!(address.iter().last(),Some(client::AddressProtocol::P2p(id)) if id==peer) {
-        return Err(Error::Denied);
-    }
+    let (address, peer) = client::endpoint(&input.address, &input.peer).map_err(protocol)?;
     let node = client::Node::start(identity.clone(), client::NodeConfig::default()).await?;
     let result = async {
         node.dial(address).await?;
@@ -128,14 +128,14 @@ pub async fn execute(
         let trust = log.into_inner();
         if let Some(attachment) = application.as_ref().and_then(|a| a.attachment.as_ref()) {
             let cid = attachment.parse::<client::protocol::Cid>().map_err(protocol)?;
-            client::office::snapshot(&node, peer, &input.genesis_hash).await?.domain.inner.files.read(&cid).map_err(protocol)?;
+            client::files::snapshot(&node, peer, &input.genesis_hash).await?.domain.inner.files.read(&cid).map_err(protocol)?;
         }
-        let document = client::office::upload(
+        let document = client::files::upload(
             &node,
             peer,
             &input.genesis_hash,
             &identity,
-            client::office::Upload {
+            client::files::Upload {
                 branch: &upload.branch,
                 path: &upload.path,
                 message: &upload.message,
@@ -150,21 +150,19 @@ pub async fn execute(
                 serde_json::json!({"type":"flows.approve","instance":review.instance,"comment_hash":digest})
             } else { serde_json::json!({"type":"flows.reject","instance":review.instance,"reason":digest}) };
             let action = serde_json::from_value(value).map_err(protocol)?;
-            return client::trust::execute::<client::office::Office>(&node, peer, &input.genesis_hash, &identity, &trust, action).await;
+            return client::trust::execute::<client::application::Application>(&node, peer, &input.genesis_hash, &identity, &trust, action, client::journal::PROTOCOL).await;
         }
         if let Some(application) = application {
             let value = if amending {
-                serde_json::json!({"type":"events.amend","id":application.id,"brief_hash":document.to_string()})
+                serde_json::json!({"type":"events.revise","id":application.id,"title":application.title,"brief_hash":document.to_string(),"window":application.window})
             } else {
                 serde_json::json!({"type":"events.create","id":application.id,"title":application.title,"brief_hash":document.to_string(),"window":application.window})
             };
             let action = serde_json::from_value(value).map_err(protocol)?;
-            return client::trust::execute::<client::office::Office>(&node, peer, &input.genesis_hash, &identity, &trust, action).await;
+            return client::trust::execute::<client::application::Application>(&node, peer, &input.genesis_hash, &identity, &trust, action, client::journal::PROTOCOL).await;
         }
-        let state = client::office::snapshot(&node, peer, &input.genesis_hash).await?;
-        let projection = Some(state.identity_presentation(trust.state())?);
-        let mut response = client::journal::Response::snapshot(state, &input.genesis_hash)?;
-        response.identity_view = projection;
+        let mut response = client::journal::request::<client::application::Application>(&node, peer, &input.genesis_hash, client::journal::Request::Snapshot, client::journal::PROTOCOL).await?;
+        if let Some(state)=&response.state {response.identity_view=Some(state.identity_presentation(trust.state())?);}
         Ok(response)
     }
     .await;
@@ -175,24 +173,23 @@ fn protocol(e: impl std::fmt::Display) -> Error {
     Error::Protocol(e.to_string())
 }
 
-pub async fn push(identity: Identity, text: &str) -> Result<client::protocol::OfficePushResponse> {
+pub async fn push(
+    identity: Identity,
+    text: &str,
+) -> Result<client::protocol::ApplicationPushResponse> {
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Input {
         address: String,
         peer: String,
-        request: client::protocol::OfficePushRequest,
+        request: client::protocol::ApplicationPushRequest,
     }
     let input: Input = serde_json::from_str(text).map_err(protocol)?;
-    let peer = input.peer.parse().map_err(protocol)?;
-    let address: client::Multiaddr = input.address.parse().map_err(protocol)?;
-    if !matches!(address.iter().last(),Some(client::AddressProtocol::P2p(id)) if id==peer) {
-        return Err(Error::Denied);
-    }
+    let (address, peer) = client::endpoint(&input.address, &input.peer).map_err(protocol)?;
     let node = client::Node::start(identity, client::NodeConfig::default()).await?;
     let result = async {
         node.dial(address).await?;
-        client::office::push(&node, peer, &input.request).await
+        client::files::push(&node, peer, &input.request).await
     }
     .await;
     node.shutdown().await?;

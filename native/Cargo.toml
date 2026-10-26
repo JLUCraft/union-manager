@@ -11,7 +11,7 @@ crate-type = ["cdylib","rlib"]
 events = { path = "../../union-core/crates/events" }
 flows = { path = "../../union-core/crates/flows" }
 zeroize = "1"
-client = { path = "../../union-core/crates/client", features = ["league", "office"] }
+client = { path = "../../union-core/crates/client", features = [] }
 jni = "0.21"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }

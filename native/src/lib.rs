@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 //! JNI accepts transient secrets unlocked by Android Keystore; no plaintext files.
-mod office;
-use ::client::{Identity, client};
+mod application;
+use ::client::Identity;
 use jni::{
     JNIEnv,
     objects::{JByteArray, JClass, JString},
@@ -120,11 +120,8 @@ async fn execute_ops(
     identity: Identity,
     input: OpsInput,
 ) -> Result<::client::protocol::OpsResponse, String> {
-    let peer = input.peer.parse().map_err(|_| "Invalid peer")?;
-    let address: ::client::Multiaddr = input.address.parse().map_err(|_| "Invalid address")?;
-    if !matches!(address.iter().last(), Some(::client::AddressProtocol::P2p(id)) if id == peer) {
-        return Err("Address must match host identity".into());
-    }
+    let (address, peer) =
+        ::client::endpoint(&input.address, &input.peer).map_err(|e| e.to_string())?;
     let service = input.service.parse().map_err(|_| "Invalid service")?;
     let node = ::client::Node::start(identity, ::client::NodeConfig::default())
         .await
@@ -152,7 +149,7 @@ pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_executeO
 }
 
 /// TOFU bootstrap: fetch the identity genesis over an authenticated connection and
-/// pin it locally; the office business genesis is optional (server may not host it).
+/// pin it locally and fetch the single application genesis when the host provides it.
 async fn fetch_genesis(
     identity: Identity,
     text: &str,
@@ -168,20 +165,20 @@ async fn fetch_genesis(
     let result = async {
         let (genesis, pin) =
             ::client::trust::fetch_identity_genesis(&node, &input.address, &input.peer).await?;
-        let office = match ::client::trust::fetch_business_genesis::<::client::office::Office>(
-            &node,
-            &input.address,
-            &input.peer,
-            &pin,
-        )
-        .await
-        {
-            Ok((_, office_pin)) => serde_json::json!({"genesis_hash": office_pin}),
-            Err(_) => serde_json::Value::Null,
-        };
+        let application =
+            ::client::trust::fetch_business_genesis::<::client::application::Application>(
+                &node,
+                &input.address,
+                &input.peer,
+                &pin,
+                ::client::journal::PROTOCOL,
+            )
+            .await
+            .map(|(_, pin)| serde_json::json!({"genesis_hash": pin}))
+            .unwrap_or(serde_json::Value::Null);
         Ok::<serde_json::Value, ::client::Error>(serde_json::json!({
             "identity": {"genesis": genesis, "genesis_hash": pin},
-            "office": office,
+            "application": application,
         }))
     };
     let response = tokio::time::timeout(std::time::Duration::from_secs(150), result)
@@ -199,6 +196,45 @@ pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_fetchGen
     input: JString<'_>,
 ) -> jstring {
     request(&mut env, &secret, input, GENESIS_OPERATION)
+}
+
+const DISCOVER_OPERATION: u8 = 7;
+
+/// LAN discovery comes from the shared client crate; announcements are untrusted
+/// hints and the caller still pins the identity hash.
+async fn discover(identity: Identity, text: &str) -> Result<serde_json::Value, ::client::Error> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Input {
+        #[serde(default)]
+        wait_ms: Option<u64>,
+    }
+    let input: Input = serde_json::from_str(text).map_err(::client::Error::protocol)?;
+    let servers = ::client::discovery::discover(
+        identity,
+        input.wait_ms.map(std::time::Duration::from_millis),
+    )
+    .await?;
+    Ok(serde_json::json!({
+        "servers": servers.into_iter().map(|server| serde_json::json!({
+            "peer": server.peer.to_string(),
+            "address": server.address,
+            "federation": server.federation,
+            "genesis_hash": server.genesis_hash,
+            "application": server.application.map(|hash| serde_json::json!({"genesis_hash": hash})),
+            "services": server.services,
+        })).collect::<Vec<_>>()
+    }))
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_discover(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    secret: JByteArray<'_>,
+    input: JString<'_>,
+) -> jstring {
+    request(&mut env, &secret, input, DISCOVER_OPERATION)
 }
 
 fn request(
@@ -230,7 +266,7 @@ fn request(
                 .map_err(|e| e.to_string())?;
             if operation == PUSH_OPERATION {
                 let response = runtime
-                    .block_on(office::push(identity, &input))
+                    .block_on(application::push(identity, &input))
                     .map_err(|e| e.failure())?;
                 serde_json::to_string(&response).map_err(|e| e.to_string().into())
             } else if operation == IDENTITY_OPERATION {
@@ -248,17 +284,36 @@ fn request(
                     .block_on(fetch_genesis(identity, &input))
                     .map_err(|e| e.failure())?;
                 serde_json::to_string(&response).map_err(|e| e.to_string().into())
-            } else if operation == 2 {
+            } else if operation == DISCOVER_OPERATION {
                 let response = runtime
-                    .block_on(office::execute(identity, &input))
+                    .block_on(discover(identity, &input))
                     .map_err(|e| e.failure())?;
                 serde_json::to_string(&response).map_err(|e| e.to_string().into())
             } else {
-                let input: client::Input = serde_json::from_str(&input).map_err(invalid_request)?;
+                let signer = identity.clone();
+                let request: serde_json::Value =
+                    serde_json::from_str(&input).map_err(invalid_request)?;
+                let genesis = request["genesis_hash"].as_str().unwrap_or("");
                 let response = runtime
-                    .block_on(client::execute(identity, input))
+                    .block_on(application::execute(identity, &input))
                     .map_err(|e| e.failure())?;
-                serde_json::to_string(&response).map_err(|e| e.to_string().into())
+                let presentation = response
+                    .state
+                    .as_ref()
+                    .zip(response.identity_view.as_ref())
+                    .zip(response.proof.as_ref())
+                    .map(|((state, view), proof)| {
+                        ::client::points::present(state, view, &signer, genesis, proof.observed_ms)
+                    })
+                    .transpose()
+                    .map_err(|e| e.failure())?
+                    .flatten();
+                let mut value = serde_json::to_value(response).map_err(|e| e.to_string())?;
+                if let Some(points) = presentation {
+                    value["state"]["points_view"] =
+                        serde_json::to_value(points).map_err(|e| e.to_string())?;
+                }
+                serde_json::to_string(&value).map_err(|e| e.to_string().into())
             }
         },
     ))
@@ -274,17 +329,7 @@ fn request(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_executeOffice(
-    mut env: JNIEnv<'_>,
-    _class: JClass<'_>,
-    secret: JByteArray<'_>,
-    input: JString<'_>,
-) -> jstring {
-    request(&mut env, &secret, input, 2)
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_readOfficeFile(
+pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_readFile(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     snapshot: JString<'_>,
@@ -300,14 +345,8 @@ pub extern "system" fn Java_com_jlucraft_manager_nativecore_UnionNative_readOffi
         }
         let text: String = env.get_string(&snapshot).map_err(|e| e.to_string())?.into();
         let cid: String = env.get_string(&cid).map_err(|e| e.to_string())?.into();
-        let state: ::client::office::Snapshot =
-            serde_json::from_str(&text).map_err(|e| e.to_string())?;
-        let bytes = state
-            .domain
-            .inner
-            .files
-            .read(&cid.parse().map_err(|e: ::client::Error| e.to_string())?)
-            .map_err(|e| e.to_string())?;
+        let snapshot: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let bytes = ::client::files::cached_file(&snapshot, &cid).map_err(|e| e.to_string())?;
         env.byte_array_from_slice(&bytes)
             .map(|a| a.into_raw())
             .map_err(|e| e.to_string())

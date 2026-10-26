@@ -22,6 +22,10 @@ case "$mode" in
     [[ "$ANDROID_SERIAL" == emulator-* ]] || { echo 'Biometric automation requires a disposable emulator.' >&2; exit 2; }
     tasks=(:app:testDebugUnitTest :app:connectedDebugAndroidTest)
     runner_args=(-Pandroid.testInstrumentationRunnerArguments.class=com.jlucraft.manager.nativecore.BiometricVaultTest -Pandroid.testInstrumentationRunnerArguments.biometricVault=true)
+    # Optional live identity backend for the actual-activity retry-step acceptance case.
+    if [[ -n "${STAGING_FIXTURE:-}" ]]; then
+      runner_args+=("-Pandroid.testInstrumentationRunnerArguments.stagingFixture=$STAGING_FIXTURE")
+    fi
     (
       while true; do
         adb -s "$ANDROID_SERIAL" emu finger remove >/dev/null 2>&1 || exit
@@ -53,7 +57,7 @@ case "$mode" in
 esac
 # Keep the launcher/game usable while testing. Native libraries must be built first.
 ./gradlew --no-daemon --max-workers=1 \
-  '-Dorg.gradle.jvmargs=-Xmx768m -XX:MaxMetaspaceSize=384m -Dfile.encoding=UTF-8' \
+  '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
   -Pkotlin.compiler.execution.strategy=in-process "${runner_args[@]}" "${tasks[@]}"
 if [[ -n "${capture_run:-}" ]]; then
   mkdir -p "$TUTORIAL_OUTPUT_DIR"
