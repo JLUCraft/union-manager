@@ -10,6 +10,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
+/** The catalog minus the actions that would author the founder roster. */
+internal fun offeredIdentityForms(catalog: JSONArray): List<JSONObject> =
+    (0 until catalog.length()).map { catalog.getJSONObject(it) }
+        .filterNot { it.getString("action") == FOUNDER_ROSTER_ACTION }
+
+/** Rewrites the whole founder roster in one action; the app never offers it. */
+private const val FOUNDER_ROSTER_ACTION = "replace_chairs"
+
 internal fun identityActionLabel(action: String): Int = when (action) {
     "confirm_member" -> R.string.identity_action_confirm_member
     "revoke_membership" -> R.string.identity_action_revoke_membership
@@ -25,7 +33,6 @@ internal fun identityActionLabel(action: String): Int = when (action) {
     "approve_succession" -> R.string.identity_action_approve_succession
     "execute_succession" -> R.string.identity_action_execute_succession
     "cancel_succession" -> R.string.identity_action_cancel_succession
-    "replace_chairs" -> R.string.identity_action_replace_chairs
     else -> R.string.identity_invalid
 }
 internal fun identityFieldLabel(field: String): Int = when (field) {
@@ -40,15 +47,28 @@ internal fun identityFieldLabel(field: String): Int = when (field) {
     "quorum" -> R.string.identity_field_quorum
     "chairs" -> R.string.identity_field_chairs
     "evidence" -> R.string.identity_field_evidence
+    "verifier" -> R.string.identity_field_verifier
     else -> R.string.identity_invalid
 }
 
 @Composable
-internal fun IdentityActionForm(enabled: Boolean, onDraft: (JSONObject) -> Unit) {
+internal fun IdentityActionForm(
+    enabled: Boolean,
+    members: List<String> = emptyList(),
+    /** Open the form on one specific action instead of the catalog's first; no behaviour change. */
+    initialAction: String? = null,
+    onDraft: (JSONObject) -> Unit,
+) {
     val catalog = remember { runCatching { JSONArray(UnionNative.management("{\"operation\":\"forms\"}")) } }
     if (catalog.isFailure) { Text(stringResource(R.string.identity_forms_unavailable)); return }
-    val forms = remember { catalog.getOrThrow().let { a -> (0 until a.length()).map { a.getJSONObject(it) } } }
-    var selected by remember { mutableStateOf(forms.first().getString("action")) }
+    // The founder roster is defined by the server's source and immutable once the genesis is
+    // published, so the catalog's bulk chair rewrite is not offered here: changing who leads a club
+    // goes through multi-signature succession, and changing a device goes through bind/revoke.
+    val forms = remember { offeredIdentityForms(catalog.getOrThrow()) }
+    if (forms.isEmpty()) { Text(stringResource(R.string.identity_forms_unavailable)); return }
+    var selected by remember {
+        mutableStateOf(forms.firstOrNull { it.getString("action") == initialAction }?.getString("action") ?: forms.first().getString("action"))
+    }
     var expanded by remember { mutableStateOf(false) }
     var invalid by remember(selected) { mutableStateOf(false) }
     val values = remember(selected) { mutableStateMapOf<String, Any>() }
@@ -89,19 +109,34 @@ internal fun IdentityActionForm(enabled: Boolean, onDraft: (JSONObject) -> Unit)
                 }
                 else -> {
                     var text by remember(name) { mutableStateOf("") }
-                    OutlinedTextField(text, { input ->
-                        text = input
-                        values[name] = if (field.getString("kind") == "number") input.toLongOrNull() ?: input else input
-                        invalid = false
-                    }, enabled = enabled, label = { Text(label) }, singleLine = true,
-                        supportingText = if (field.getBoolean("optional")) ({ Text(stringResource(R.string.identity_field_optional)) }) else null,
-                        modifier = Modifier.fillMaxWidth())
-                    if (field.optBoolean("generated")) TextButton(enabled = enabled, onClick = {
-                        try {
-                            text = org.json.JSONTokener(UnionNative.management("{\"operation\":\"new_service_id\"}")).nextValue() as String
-                            values[name] = text; invalid = false
-                        } catch (_: Exception) { invalid = true }
-                    }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(R.string.identity_generate_id)) }
+                    if (name == "member" && members.isNotEmpty()) {
+                        ChoiceField(identityFieldLabel(name), text, members, enabled) { picked ->
+                            text = picked; values[name] = picked; invalid = false
+                        }
+                    } else {
+                        OutlinedTextField(text, { input ->
+                            text = input
+                            values[name] = if (field.getString("kind") == "number") input.toLongOrNull() ?: input else input
+                            invalid = false
+                        }, enabled = enabled, label = { Text(label) }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth())
+                        FieldSuggestions(
+                            name,
+                            when (name) {
+                                "service" -> SERVICE_SUGGESTIONS
+                                "permission" -> PERMISSION_SUGGESTIONS
+                                else -> emptyList()
+                            }, text, enabled,
+                        ) { picked ->
+                            text = picked; values[name] = picked; invalid = false
+                        }
+                        if (field.optBoolean("generated")) TextButton(enabled = enabled, onClick = {
+                            try {
+                                text = org.json.JSONTokener(UnionNative.management("{\"operation\":\"new_service_id\"}")).nextValue() as String
+                                values[name] = text; invalid = false
+                            } catch (_: Exception) { invalid = true }
+                        }, modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET)) { Text(stringResource(R.string.identity_generate_id)) }
+                    }
                 }
             }
         }
@@ -117,6 +152,50 @@ internal fun IdentityActionForm(enabled: Boolean, onDraft: (JSONObject) -> Unit)
 }
 
 private data class ChairInput(val id: String = UUID.randomUUID().toString(), val club: String = "", val member: String = "")
+
+// Protocol tokens only suggest common values; the text field decides for both.
+private val SERVICE_SUGGESTIONS = listOf("application")
+private val PERMISSION_SUGGESTIONS = listOf("read", "write", "admin", "use", "manage")
+
+private fun suggestionLabel(field: String, value: String): Int? = when (field) {
+    "service" -> when (value) {
+        "application" -> R.string.identity_service_application
+        else -> null
+    }
+    "permission" -> when (value) {
+        "read" -> R.string.identity_permission_read
+        "write" -> R.string.identity_permission_write
+        "admin" -> R.string.identity_permission_admin
+        "use" -> R.string.identity_permission_use
+        "manage" -> R.string.identity_permission_manage
+        else -> null
+    }
+    else -> null
+}
+
+@Composable
+private fun FieldSuggestions(
+    field: String,
+    suggestions: List<String>,
+    selected: String,
+    enabled: Boolean,
+    onPick: (String) -> Unit,
+) {
+    if (suggestions.isEmpty()) return
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(SPACING_S), verticalArrangement = Arrangement.spacedBy(SPACING_S)) {
+        suggestions.forEach { suggestion ->
+            val label = suggestionLabel(field, suggestion)
+            FilterChip(
+                selected = selected == suggestion,
+                enabled = enabled,
+                onClick = { onPick(suggestion) },
+                label = { Text(if (label != null) stringResource(label) else suggestion) },
+                modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET),
+            )
+        }
+    }
+}
+
 @Composable
 private fun ChairFields(enabled: Boolean, onValue: (Any) -> Unit) {
     var rows by remember { mutableStateOf(listOf(ChairInput())) }

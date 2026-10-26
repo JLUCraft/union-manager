@@ -64,7 +64,7 @@ fun OfficeAttachment(state: JSONObject?, busy: Boolean, attachmentId: String, ci
             working = true; failed = false; exported = false
             try {
                 withContext(Dispatchers.IO) {
-                    val bytes = UnionNative.readOfficeFile(state.toString(), cid)
+                    val bytes = UnionNative.readFile(state.toString(), cid)
                     requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(bytes) }
                 }
                 exported = true
@@ -90,7 +90,9 @@ fun OfficeAttachment(state: JSONObject?, busy: Boolean, attachmentId: String, ci
         if (working || (pendingUpload && busy)) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (failed) Text(stringResource(R.string.office_files_error), color = MaterialTheme.colorScheme.error)
         if (exported) Text(stringResource(R.string.office_files_exported), color = MaterialTheme.colorScheme.primary)
-        if (editable) Button(onClick = {
+        // Attaching material is optional, so it never takes the one solid weight on the page; the
+        // step's own advance or submit action owns that.
+        if (editable) OutlinedButton(onClick = {
             activity?.documentPickerActive = true
             try { upload.launch("*/*") } catch (_: Exception) { activity?.documentPickerActive = false; failed = true }
         }, enabled = enabled && attachmentId.isNotBlank(),

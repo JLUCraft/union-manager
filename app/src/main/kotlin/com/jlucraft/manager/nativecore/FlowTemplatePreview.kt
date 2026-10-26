@@ -32,6 +32,14 @@ fun FlowTemplatePreview(template: JSONObject) {
             "member" -> stringResource(R.string.flow_member, approver.getString("member"))
             "role" -> stringResource(R.string.flow_role, approver.getString("club"), approver.getString("role"))
             "club_quorum" -> stringResource(R.string.flow_quorum, approver.getInt("quorum"), (0 until approver.getJSONArray("clubs").length()).joinToString(stringResource(R.string.governance_separator)) { approver.getJSONArray("clubs").getString(it) })
+            "club_presidents" -> {
+                val clubs = approver.getJSONArray("clubs")
+                stringResource(
+                    R.string.flow_presidents,
+                    clubs.length(),
+                    (0 until clubs.length()).joinToString(stringResource(R.string.governance_separator)) { clubs.getString(it) },
+                )
+            }
             else -> stringResource(R.string.office_unknown)
         })
         if (!stage.isNull("timeout_ms")) {

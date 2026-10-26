@@ -40,7 +40,7 @@ class DeviceIdentityTest {
         compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { DeviceIdentityCard(exported) } } }
         compose.onNodeWithText(context.getString(R.string.identifier_details)).performClick()
         compose.onNodeWithText(exported).assertExists()
-        compose.onNodeWithText(context.getString(R.string.identity_export_copy)).performScrollTo().performClick()
+        compose.onNodeWithText(context.getString(R.string.identity_export_copy)).scrollToIfScrollable().performClick()
         compose.runOnIdle {
             val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
             assertEquals(exported, clipboard.primaryClip?.getItemAt(0)?.text?.toString())

@@ -27,16 +27,16 @@ class UnionNativeTest {
         val secret = UnionNative.generateSecret()
         val snapshot = try {
             org.json.JSONObject(files).put("identity", org.json.JSONObject()
-                .put("genesis", "a".repeat(64)).put("namespace", "office")
-                .put("audience", UnionNative.peerId(secret)).put("service", "office").put("club", "club"))
+                .put("genesis", "a".repeat(64)).put("namespace", "organization")
+                .put("audience", UnionNative.peerId(secret)).put("service", "application").put("club", "club"))
                 .toString()
         } finally { secret.fill(0) }
         val cid = "baguqeerawzzpt6wo3a7qc7j5jhvu2kyjycyru5cdxf64kqhby5hhccio4eaq"
-        assertArrayEquals("office fixture".toByteArray(), UnionNative.readOfficeFile(snapshot, cid))
+        assertArrayEquals("office fixture".toByteArray(), UnionNative.readFile(snapshot, cid))
         val corrupt = org.json.JSONObject(snapshot)
         corrupt.getJSONObject("files").getJSONObject("blocks").put("bafkreigdg6n6gudw43q635jqqns45zwp3epbuxyotdjtnydlnps3h5zxva", "dGFtcGVy")
-        assertThrows(IllegalStateException::class.java) { UnionNative.readOfficeFile(corrupt.toString(), cid) }
-        assertThrows(IllegalStateException::class.java) { UnionNative.readOfficeFile(snapshot, "../file") }
+        assertThrows(IllegalStateException::class.java) { UnionNative.readFile(corrupt.toString(), cid) }
+        assertThrows(IllegalStateException::class.java) { UnionNative.readFile(snapshot, "../file") }
     }
     @Test fun businessRequestsRequireUnifiedIdentityBeforeNetwork() {
         val secret = UnionNative.generateSecret()
@@ -45,7 +45,7 @@ class UnionNativeTest {
                 .put("peer", UnionNative.peerId(secret)).put("genesis_hash", "a".repeat(64)).toString()
             val league = org.json.JSONObject(UnionNative.execute(secret, input))
             assertEquals("invalid_request", league.getString("error_code"))
-            val office = org.json.JSONObject(UnionNative.executeOffice(secret, input))
+            val office = org.json.JSONObject(UnionNative.execute(secret, input))
             assertEquals("invalid_request", office.getString("error_code"))
         } finally { secret.fill(0) }
     }

@@ -3,6 +3,7 @@ package com.jlucraft.manager.nativecore
 import android.os.ParcelFileDescriptor
 
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -44,14 +45,14 @@ class LocalOfficeFlowTest {
         val secret = shellFile("device.key")
         val directory = File(instrumentation.targetContext.cacheDir, "local-office-demo")
         try {
-            val node = config.getJSONObject("nodes").getJSONObject("office")
+            val node = config.getJSONObject("nodes").getJSONObject("organization")
             val input = JSONObject().put("address", node.getString("address"))
                 .put("peer", node.getString("peer")).put("genesis_hash", node.getString("genesis"))
                 .put("identity", identityConfig(config.getJSONObject("identity").toString(), directory))
             fun execute(action: JSONObject? = null): JSONObject {
                 val request = JSONObject(input.toString())
                 action?.let { request.put("action", it) }
-                val result = JSONObject(UnionNative.executeOffice(secret, request.toString()))
+                val result = JSONObject(UnionNative.execute(secret, request.toString()))
                 check(result.isNull("error")) { result.optString("error_code") + ": " + result.optString("error") }
                 return result.getJSONObject("state").apply {
                     val view = result.getJSONObject("identity_view")
@@ -81,9 +82,11 @@ class LocalOfficeFlowTest {
                 focus = androidx.compose.ui.platform.LocalFocusManager.current
                 view = androidx.compose.ui.platform.LocalView.current
                 val scope = rememberCoroutineScope()
-                var selected by remember { mutableStateOf(OfficeDestination.Requests) }
-                ManagementNavigation(true, selected, pending, { error("League is outside this office scenario") }, { selected = it }) {
-                OfficeHomeNav(current, pending, device, null, null, { _, _ -> }, { action ->
+                var destination by remember { mutableStateOf(WorkspaceDestination.Activities) }
+                var page by remember { mutableStateOf("list") }
+                var openEvent by remember { mutableStateOf(event) }
+                var openFlow by remember { mutableStateOf("") }
+                val sendAction: (JSONObject) -> Unit = { action ->
                     pending = true
                     failure = null
                     scope.launch {
@@ -91,78 +94,122 @@ class LocalOfficeFlowTest {
                         catch (error: Throwable) { failure = error }
                         finally { pending = false }
                     }
-                }, destination = selected)
+                }
+                val formSend = FormSender { action, committed, failed ->
+                    pending = true
+                    failure = null
+                    scope.launch {
+                        try {
+                            val next = withContext(Dispatchers.IO) { execute(action) }
+                            current = next
+                            committed?.invoke(next)
+                        } catch (error: Throwable) {
+                            failure = error
+                            failed?.invoke(error.message)
+                        } finally { pending = false }
+                    }
+                }
+                WorkspaceNavigation(destination, pending, { destination = it; page = "list" }) {
+                    when (page) {
+                        "draft" -> OfficeDraftCreateFlow(current, pending, onBack = { page = "list" }, onCreated = { page = "list" }, send = formSend)
+                        "detail" -> TaskPage(
+                            current.optJSONObject("events")?.optJSONObject(openEvent)?.optString("title") ?: text(R.string.office_title),
+                            pending,
+                            { page = "list" },
+                        ) {
+                            OfficeEventDetailScreen(current, pending, device, openEvent, send = sendAction)
+                        }
+                        "flow" -> TaskPage(text(R.string.office_flows), pending, { page = "list" }) {
+                            OfficeFlowDetailScreen(current, pending, device, openFlow, onDecision = { page = "decision" }, send = sendAction)
+                        }
+                        "decision" -> OfficeFlowDecisionScreen(current, pending, device, openFlow, { page = "flow" }, sendAction)
+                        else -> when (destination) {
+                            WorkspaceDestination.Home -> WorkspaceDashboard(
+                                current, device, pending,
+                                onCreateActivity = { page = "draft" },
+                                onMembershipIssuance = {}, onPersonnel = {},
+                                onOpenActivities = { destination = WorkspaceDestination.Activities },
+                                onOpenApprovals = { destination = WorkspaceDestination.Tasks },
+                                onOpenReports = {}, onOpenResources = {},
+                            )
+                            WorkspaceDestination.Activities -> ActivityCatalog(
+                                current, device, pending,
+                                onCreate = { page = "draft" },
+                                onOpenEvent = { id -> openEvent = id; page = "detail" },
+                                onOpenCompetition = {},
+                            )
+                            WorkspaceDestination.Tasks -> TaskInbox(current, device, pending) { flow ->
+                                openFlow = flow
+                                page = "flow"
+                            }
+                            WorkspaceDestination.Settings -> Text(text(R.string.account_title))
+                        }
+                    }
                 }
             } } }
             compose.onNodeWithText(initial.getJSONObject("events").getJSONObject(event).getString("title")).performClick()
-            compose.onNodeWithText(text(R.string.office_signup)).performScrollTo()
+            compose.onNodeWithText(text(R.string.office_signup)).scrollToIfScrollable()
             compose.waitForIdle(); captureScreen("android-live-events-01-before")
             compose.onNodeWithText(text(R.string.office_cancel_signup)).assertDoesNotExist()
             compose.onNodeWithText(text(R.string.office_signup)).performClick()
             compose.waitUntil(30000) { !pending && current.optJSONObject("signups")?.optJSONArray(event)?.toString()?.contains(member) == true }
             failure?.let { throw it }
             compose.onNodeWithText(text(R.string.office_signup)).assertDoesNotExist()
-            compose.onNodeWithText(text(R.string.office_cancel_signup)).performScrollTo()
+            compose.onNodeWithText(text(R.string.office_cancel_signup)).scrollToIfScrollable()
             compose.waitForIdle(); captureScreen("android-live-events-02-joined")
             compose.onNodeWithText(text(R.string.office_cancel_signup)).performClick()
             compose.waitUntil(30000) { !pending && current.optJSONObject("signups")?.optJSONArray(event)?.length() == 0 }
             failure?.let { throw it }
             compose.onNodeWithText(text(R.string.office_signup)).assertExists()
             compose.waitForIdle(); captureScreen("android-live-events-03-cancelled")
+            compose.onNodeWithContentDescription(text(R.string.navigation_back)).performClick()
 
-            compose.onAllNodesWithText(text(R.string.office_create)).onFirst().performScrollTo().performClick()
+            compose.onNodeWithText(text(R.string.office_create)).scrollToIfScrollable().performClick()
             val applicationTitle = "社团共建申请 ${System.currentTimeMillis()}"
-            compose.onNodeWithText(text(R.string.office_name)).performScrollTo().performTextInput(applicationTitle)
+            compose.onNodeWithText(text(R.string.office_name)).scrollToIfScrollable().performTextInput(applicationTitle)
             closeKeyboard()
-            compose.onNodeWithText(text(R.string.office_description)).performScrollTo().performTextInput("周末组织校园共建，申请社团审核。无需附件即可提交。")
+            compose.onNodeWithText(text(R.string.office_description)).scrollToIfScrollable().performTextInput("周末组织校园共建，申请社团审核。无需附件即可提交。")
+            compose.onNodeWithText(text(R.string.office_next)).scrollToIfScrollable().performClick()
             val format = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
             val tomorrow = java.time.LocalDateTime.now().plusDays(1)
             listOf(R.string.office_opens to tomorrow, R.string.office_closes to tomorrow.plusHours(1), R.string.office_starts to tomorrow.plusHours(2)).forEach { (label, time) ->
-                compose.onNodeWithText(text(label)).performScrollTo().performTextInput(time.format(format))
+                compose.onNodeWithText(text(label)).scrollToIfScrollable().performTextInput(time.format(format))
             }
             closeKeyboard()
-            compose.onNodeWithText(text(R.string.office_description)).performScrollTo()
             compose.waitForIdle(); captureScreen("android-requests-01-compose")
-            compose.onNodeWithText(text(R.string.office_save_request)).performScrollTo().performClick()
+            compose.onNodeWithText(text(R.string.office_next)).scrollToIfScrollable().performClick()
+            compose.onNodeWithText(text(R.string.office_save_request)).scrollToIfScrollable().performClick()
             compose.waitUntil(60000) { !pending }; failure?.let { throw it }
             val application = current.getJSONObject("events").keys().asSequence().first { current.getJSONObject("events").getJSONObject(it).getString("title") == applicationTitle }
-            compose.onNodeWithText(applicationTitle).performScrollTo()
+            compose.onNodeWithText(applicationTitle).scrollToIfScrollable()
             compose.waitForIdle(); captureScreen("android-requests-02-saved")
-            compose.onNodeWithText(text(R.string.office_submit)).performScrollTo().performClick()
+            compose.onNodeWithText(applicationTitle).performClick()
+            compose.onNodeWithText(text(R.string.office_submit)).scrollToIfScrollable().performClick()
             compose.waitUntil(60000) { !pending }; failure?.let { throw it }
-            compose.onNodeWithText(text(R.string.office_request_approval)).performScrollTo().performClick()
-            val templates = current.getJSONObject("flow_templates")
-            val templateId = templates.keys().asSequence().first { id ->
-                val item = templates.getJSONObject(id)
-                val versions = item.getJSONArray("versions")
-                val template = versions.getJSONObject(versions.length()-1)
-                val stages = template.getJSONArray("stages")
-                item.optBoolean("active") && template.getJSONArray("payload_kinds").toString().contains("events.approve") &&
-                    (0 until stages.length()).all { stages.getJSONObject(it).getJSONObject("approver").optString("type") != "ai" }
-            }
-            val versions = templates.getJSONObject(templateId).getJSONArray("versions")
-            compose.onNodeWithText(versions.getJSONObject(versions.length()-1).getString("name")).performClick()
+            compose.onNodeWithText(text(R.string.office_start_presidents)).scrollToIfScrollable().performClick()
             compose.waitUntil(60000) { !pending }; failure?.let { throw it }
             val flows = current.getJSONObject("flows")
             val flow = flows.keys().asSequence().first { flows.getJSONObject(it).getJSONObject("payload").optString("id") == application }
             compose.waitForIdle(); captureScreen("android-requests-03-submitted")
-            compose.onNodeWithText(text(R.string.office_flows)).performClick()
-            val withinFlow = hasAnyAncestor(hasTestTag("flow:$flow"))
-            compose.onNode(hasText(applicationTitle) and withinFlow).performScrollTo().performClick()
-            compose.onNode(hasText(text(R.string.office_comment)) and withinFlow).performScrollTo().performTextInput("同意开展校园共建，请按计划组织。")
+            compose.onNodeWithText(text(R.string.workspace_nav_tasks)).performClick()
+            compose.onNodeWithText(applicationTitle).scrollToIfScrollable().performClick()
+            compose.onNodeWithText(text(R.string.office_approval_decision)).scrollToIfScrollable().performClick()
+            compose.onNodeWithText(text(R.string.office_comment)).scrollToIfScrollable().performTextInput("同意开展校园共建，请按计划组织。")
             closeKeyboard()
-            compose.onNode(hasText(applicationTitle) and withinFlow).performScrollTo()
             compose.waitForIdle(); captureScreen("android-approvals-01-comment")
-            compose.onNode(hasText(text(R.string.office_approve)) and withinFlow).performScrollTo().performClick()
+            compose.onNodeWithText(text(R.string.office_approve)).scrollToIfScrollable().performClick()
             compose.waitUntil(60000) { !pending }; failure?.let { throw it }
             assertEquals("approved", current.getJSONObject("flows").getJSONObject(flow).getString("status"))
-            compose.onNode(hasText(text(R.string.office_execute)) and withinFlow).performScrollTo()
+            compose.onNodeWithContentDescription(text(R.string.navigation_back)).performClick()
+            compose.onNodeWithText(text(R.string.office_execute)).scrollToIfScrollable()
             compose.waitForIdle(); captureScreen("android-approvals-02-approved")
-            compose.onNode(hasText(text(R.string.office_execute)) and withinFlow).performClick()
+            compose.onNodeWithText(text(R.string.office_execute)).performClick()
             compose.waitUntil(60000) { !pending }; failure?.let { throw it }
             assertEquals("executed", current.getJSONObject("flows").getJSONObject(flow).getString("status"))
             assertEquals("approved", current.getJSONObject("events").getJSONObject(application).getString("phase"))
-            compose.onNode(hasText("同意开展校园共建，请按计划组织。") and withinFlow).performScrollTo()
+            compose.onNodeWithContentDescription(text(R.string.navigation_back)).performClick()
+            compose.onNodeWithText(text(R.string.office_filter_flow_related)).scrollToIfScrollable().performClick()
+            compose.onNodeWithText(text(R.string.office_flow_executed)).scrollToIfScrollable().assertExists()
             compose.waitForIdle(); captureScreen("android-approvals-03-executed")
 
         } finally { secret.fill(0); directory.deleteRecursively() }

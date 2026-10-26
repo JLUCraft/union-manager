@@ -11,24 +11,6 @@ import com.jlucraft.manager.R
 import org.json.JSONObject
 
 @Composable
-fun GameOpsCard(execute: (JSONObject, (JSONObject) -> Unit) -> Unit) {
-    var target by remember { mutableStateOf(GameOpsTarget()) }
-    var state by remember { mutableStateOf(GameOpsState()) }
-    var busy by remember { mutableStateOf(false) }
-    GameOpsContent(target, { target = it; state = GameOpsState() }, busy, state,
-        onSelect = { state = state.select(it) }, onRun = { operation ->
-            val request = gameOpsRequest(target, operation, state.selected)
-            state = state.copy(logs = null, failed = false)
-            busy = true
-            execute(request) { value ->
-                busy = false
-                state = try { state.receive(operation, gameOpsResult(value)) }
-                catch (_: Exception) { state.copy(logs = null, failed = true) }
-            }
-        })
-}
-
-@Composable
 internal fun GameOpsContent(
     target: GameOpsTarget, onTarget: (GameOpsTarget) -> Unit,
     busy: Boolean, state: GameOpsState,

@@ -35,19 +35,86 @@ internal fun EventDetails(event: JSONObject, signups: JSONArray?) {
 }
 
 @Composable
-internal fun FlowReview(flow: JSONObject, payload: JSONObject?, target: JSONObject?, reviewable: Boolean, state: JSONObject? = null) {
+internal fun FlowReview(
+    flow: JSONObject,
+    payload: JSONObject?,
+    target: JSONObject?,
+    reviewable: Boolean,
+    state: JSONObject? = null,
+    device: String = "",
+) {
     Text(stringResource(R.string.office_flow_proposer, flow.getString("proposer")))
-    if (payload?.optString("type") == "events.approve") {
+    val status = flow.getString("status")
+    val template = state?.let { officeFlowTemplate(it, flow) }
+    val stage = state?.let { officeFlowStage(it, flow) }
+    val approver = officeApprover(stage)
+    if (stage != null) {
+        Text(
+            stringResource(R.string.office_approval_stage, flow.optInt("current") + 1, stage.optString("name")),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        if (flow.optString("template").isNotBlank() && flow.optLong("template_epoch") > 0) Text(
+            stringResource(R.string.office_approval_template_version, flow.optLong("template_epoch")),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ApproverLine(approver)
+        if (approver is OfficeApprover.ClubPresidents) Text(
+            stringResource(R.string.office_approval_presidents_no_delegation),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (status == "active" && state != null && device.isNotBlank() && approver != null && approver !is OfficeApprover.Ai) {
+            val seat = officeApprovalSeat(state, device, flow)
+            if (seat == null) Text(stringResource(R.string.office_approval_not_you))
+            else {
+                val delegatedBy = seat.delegatedBy
+                if (delegatedBy != null) Text(
+                    stringResource(
+                        R.string.office_approval_delegated,
+                        officeMemberId(state, delegatedBy) ?: delegatedBy,
+                    ),
+                ) else Text(stringResource(R.string.office_approval_you))
+                if (seat.approved) Text(stringResource(R.string.office_approval_already_approved))
+            }
+        }
+        val threshold = officeApprovalThreshold(approver)
+        if (status == "active" && threshold != null) {
+            Text(stringResource(R.string.office_approval_progress, officeApprovalProgress(state, flow), threshold))
+        }
+    }
+    if (payload != null && payload.optString("type") == "events.approve") {
+        val requested = payload.optLong("epoch")
         // The current brief must never be presented as the previously approved one.
-        if (target != null && target.optLong("epoch") == payload.getLong("epoch")) {
-            if (state != null) OfficeRequestDetails(state, payload.getString("id"), target, false, false) {}
+        if (target == null) {
+            Text(stringResource(R.string.office_approval_target_missing), color = MaterialTheme.colorScheme.error)
+        } else {
+            Text(stringResource(R.string.office_approval_version, requested))
+            if (target.optLong("epoch") != requested) {
+                Text(
+                    stringResource(R.string.office_approval_version_mismatch, requested, target.optLong("epoch")),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            } else if (status == "active" && target.optString("phase") != "review") {
+                Text(stringResource(R.string.office_approval_phase_mismatch), color = MaterialTheme.colorScheme.error)
+            }
+            if (target.optLong("epoch") == requested && state != null) {
+                OfficeRequestDetails(state, payload.getString("id"), target, false, false, send = { _ -> })
+            }
         }
     } else Text(stringResource(R.string.office_flow_other_action))
-    val status = flow.getString("status")
-    if (status in setOf("active", "approved") && !reviewable) {
-        Text(stringResource(R.string.office_flow_unreviewable), color = MaterialTheme.colorScheme.error)
+    if (status == "active" && !reviewable) {
+        when {
+            payload?.optString("type") != "events.approve" -> Unit
+            target == null -> Unit
+            (target?.optLong("epoch") ?: -1L) != (payload?.optLong("epoch") ?: -1L) -> Unit
+            target?.optString("phase") != "review" -> Unit
+            template == null -> Text(stringResource(R.string.office_approval_no_template), color = MaterialTheme.colorScheme.error)
+            else -> Text(stringResource(R.string.office_flow_unreviewable), color = MaterialTheme.colorScheme.error)
+        }
     }
     if (status == "changes_requested") Text(stringResource(R.string.office_revision_required))
+    if (status == "rejected") Text(stringResource(R.string.office_rejected_help))
     if (status == "active" && !flow.isNull("deadline_ms")) Text(stringResource(R.string.office_flow_deadline, officeTime(flow.getLong("deadline_ms"))))
     val records = flow.optJSONArray("records")
     (0 until (records?.length() ?: 0)).forEach { stage ->
@@ -103,6 +170,39 @@ internal fun FlowReview(flow: JSONObject, payload: JSONObject?, target: JSONObje
 }
 
 @Composable
+private fun ApproverLine(approver: OfficeApprover?) {
+    when (approver) {
+        null -> Text(stringResource(R.string.office_approval_unknown_approver))
+        OfficeApprover.Ai -> Text(stringResource(R.string.office_approval_approver_ai))
+        is OfficeApprover.Member -> Text(stringResource(R.string.office_approval_approver_member, approver.member))
+        is OfficeApprover.Role -> Text(
+            stringResource(
+                R.string.office_approval_approver_role,
+                approver.club,
+                officeRoleText(approver.role),
+            ),
+        )
+        is OfficeApprover.ClubQuorum -> Text(
+            stringResource(
+                R.string.office_approval_approver_quorum,
+                approver.clubs.joinToString(stringResource(R.string.governance_separator)),
+                approver.quorum,
+            ),
+        )
+        is OfficeApprover.ClubPresidents -> Text(
+            stringResource(
+                R.string.office_approval_approver_presidents,
+                approver.clubs.joinToString(stringResource(R.string.governance_separator)),
+                approver.clubs.size,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun officeRoleText(role: String): String = officeRoleLabel(role)?.let { stringResource(it) } ?: role
+
+@Composable
 private fun ReviewComment(state: JSONObject?, digest: String) {
     var text by remember(digest) { mutableStateOf<String?>(null) }
     LaunchedEffect(state, digest) {
@@ -116,7 +216,7 @@ private fun ReviewComment(state: JSONObject?, digest: String) {
                     val directory = JSONObject(String(android.util.Base64.decode(encoded, android.util.Base64.NO_WRAP), Charsets.UTF_8)).getJSONObject("files")
                     directory.optJSONObject(digest)?.optString("/")
                 }.firstNotNullOfOrNull { cid ->
-                    val bytes = UnionNative.readOfficeFile(state.toString(), cid)
+                    val bytes = UnionNative.readFile(state.toString(), cid)
                     val actual = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { (it.toInt() and 255).toString(16).padStart(2, '0') }
                     if (actual == digest) String(bytes, Charsets.UTF_8) else null
                 }

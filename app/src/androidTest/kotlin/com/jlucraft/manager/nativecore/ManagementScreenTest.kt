@@ -25,55 +25,124 @@ class ManagementScreenTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private fun text(id: Int) = context.getString(id)
     private fun node(id: Int) = compose.onNodeWithText(text(id))
+    private companion object { const val OVERSIZE_IDENTIFIER_BYTES = 129 }
+    private val oversizeIdentifier = "x".repeat(OVERSIZE_IDENTIFIER_BYTES)
     @Test fun serviceRegistrationFormUsesRealNativeBuilder() {
         val secret = UnionNative.generateSecret()
         val peer = try { UnionNative.peerId(secret) } finally { secret.fill(0) }
         var result: JSONObject? = null
         compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { IdentityActionForm(true) { result = it } } } }
         node(R.string.identity_action_confirm_member).performClick()
-        node(R.string.identity_action_register_service).performScrollTo().performClick()
-        node(R.string.identity_field_audience).performScrollTo().performTextInput(peer)
-        node(R.string.identity_field_club).performScrollTo().performTextInput("test-school")
-        node(R.string.identity_field_service).performScrollTo().performTextInput("test-service")
-        node(R.string.identity_draft).performScrollTo().performClick()
+        node(R.string.identity_action_register_service).scrollToIfScrollable().performClick()
+        node(R.string.identity_field_audience).scrollToIfScrollable().performTextInput(peer)
+        node(R.string.identity_field_club).scrollToIfScrollable().performTextInput("test-school")
+        node(R.string.identity_service_application).scrollToIfScrollable().performClick()
+        node(R.string.identity_draft).scrollToIfScrollable().performClick()
         compose.runOnIdle {
             assertEquals("register_service", result?.getString("type"))
+            assertEquals("application", result?.getString("service"))
             assertEquals(peer, result?.getString("audience"))
             assertEquals("test-school", result?.getString("club"))
         }
     }
-    @Test fun founderEditorExportsValidatedServerManifestWithoutSecrets() {
+    @Test fun generatedCustomServiceUuidRegistrationUsesRealNativeBuilder() {
         val secret = UnionNative.generateSecret()
-        val public = try { devicePublicIdentity(secret) } finally { secret.fill(0) }
-        var draft by mutableStateOf(JSONObject().put("federation", "screen-test").put("quorum", "1")
-            .put("founders", JSONArray().put(JSONObject().put("row_id", "row").put("member", "founder").put("club", "school").put("identity", public))).toString())
-        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { GenesisBuilderCard(draft) { draft = it } } } }
-        node(R.string.genesis_builder_open).performClick()
-        node(R.string.genesis_validate).performScrollTo().performClick()
-        node(R.string.identity_export_copy).performScrollTo().performClick()
+        val peer = try { UnionNative.peerId(secret) } finally { secret.fill(0) }
+        var result: JSONObject? = null
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { IdentityActionForm(true) { result = it } } } }
+        node(R.string.identity_action_confirm_member).performClick()
+        node(R.string.identity_action_register_service).scrollToIfScrollable().performClick()
+        node(R.string.identity_field_audience).scrollToIfScrollable().performTextInput(peer)
+        node(R.string.identity_field_club).scrollToIfScrollable().performTextInput("test-school")
+        node(R.string.identity_generate_id).scrollToIfScrollable().performClick()
+        node(R.string.identity_draft).scrollToIfScrollable().performClick()
+        var generated: String? = null
         compose.runOnIdle {
-            val exported = context.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString()
-            val value = JSONObject(exported)
-            assertEquals(setOf("federation", "founders", "quorum"), value.keys().asSequence().toSet())
-            val reviewed = JSONObject(UnionNative.management(JSONObject().put("operation", "review_genesis").put("genesis", value).toString()))
-            assertEquals(64, reviewed.getString("genesis_hash").length)
-            assertEquals("founder", value.getJSONArray("founders").getJSONObject(0).getString("member"))
+            assertEquals("register_service", result?.getString("type"))
+            generated = result?.getString("service")
+            assertNotNull(generated)
+            java.util.UUID.fromString(generated)
+            assertEquals(peer, result?.getString("audience"))
+            assertEquals("test-school", result?.getString("club"))
+        }
+        compose.onNodeWithText(generated!!).assertExists()
+    }
+    @Test fun grantPermissionAcceptsCustomServiceWithUseAndManage() {
+        val customService = org.json.JSONTokener(UnionNative.management("{\"operation\":\"new_service_id\"}")).nextValue() as String
+        val results = mutableListOf<JSONObject>()
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { IdentityActionForm(true, listOf("alice")) { results += it } } } }
+        node(R.string.identity_action_confirm_member).performClick()
+        node(R.string.identity_action_grant_permission).scrollToIfScrollable().performClick()
+        node(R.string.identity_generate_id).scrollToIfScrollable().performClick()
+        compose.onNodeWithContentDescription(text(R.string.identity_field_member)).scrollToIfScrollable().performClick()
+        compose.onNodeWithText("alice").performClick()
+        node(R.string.identity_field_service).scrollToIfScrollable().performTextInput(customService)
+        node(R.string.identity_field_permission).scrollToIfScrollable().performTextInput("use")
+        node(R.string.identity_draft).scrollToIfScrollable().performClick()
+        node(R.string.identity_generate_id).scrollToIfScrollable().performClick()
+        node(R.string.identity_field_permission).scrollToIfScrollable().performTextClearance()
+        node(R.string.identity_field_permission).performTextInput("manage")
+        node(R.string.identity_draft).scrollToIfScrollable().performClick()
+        compose.runOnIdle {
+            assertEquals(2, results.size)
+            assertEquals(listOf("use", "manage"), results.map { it.getString("permission") })
+            assertEquals(2, results.map { it.getString("id") }.toSet().size)
+            results.forEach { result ->
+                assertEquals("grant_permission", result.getString("type"))
+                assertEquals("alice", result.getString("member"))
+                assertEquals(customService, result.getString("service"))
+                java.util.UUID.fromString(result.getString("id"))
+            }
         }
     }
-    @Test fun businessRolesUseNativeValidationAndExplicitConfirmation() {
+    @Test fun invalidPermissionIdentifierShowsFormErrorAndDoesNotDispatch() {
+        val customService = org.json.JSONTokener(UnionNative.management("{\"operation\":\"new_service_id\"}")).nextValue() as String
+        var result: JSONObject? = null
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { IdentityActionForm(true, listOf("alice")) { result = it } } } }
+        node(R.string.identity_action_confirm_member).performClick()
+        node(R.string.identity_action_grant_permission).scrollToIfScrollable().performClick()
+        node(R.string.identity_generate_id).scrollToIfScrollable().performClick()
+        compose.onNodeWithContentDescription(text(R.string.identity_field_member)).scrollToIfScrollable().performClick()
+        compose.onNodeWithText("alice").performClick()
+        node(R.string.identity_field_service).scrollToIfScrollable().performTextInput(customService)
+        node(R.string.identity_field_permission).scrollToIfScrollable().performTextInput(oversizeIdentifier)
+        node(R.string.identity_draft).scrollToIfScrollable().performClick()
+        node(R.string.identity_form_invalid).assertExists()
+        compose.runOnIdle { assertNull(result) }
+    }
+    @Test fun invalidCustomServiceIdentifierShowsFormErrorAndDoesNotDispatch() {
+        val secret = UnionNative.generateSecret()
+        val peer = try { UnionNative.peerId(secret) } finally { secret.fill(0) }
+        var result: JSONObject? = null
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { IdentityActionForm(true) { result = it } } } }
+        node(R.string.identity_action_confirm_member).performClick()
+        node(R.string.identity_action_register_service).scrollToIfScrollable().performClick()
+        node(R.string.identity_field_audience).scrollToIfScrollable().performTextInput(peer)
+        node(R.string.identity_field_club).scrollToIfScrollable().performTextInput("test-school")
+        node(R.string.identity_field_service).scrollToIfScrollable().performTextInput(oversizeIdentifier)
+        node(R.string.identity_draft).scrollToIfScrollable().performClick()
+        node(R.string.identity_form_invalid).assertExists()
+        compose.runOnIdle { assertNull(result) }
+    }
+    @Test fun consensusReplicasUseNativeValidationWithoutRoleEditor() {
+        val secret = UnionNative.generateSecret()
+        val peer = try { UnionNative.peerId(secret) } finally { secret.fill(0) }
         var action: JSONObject? = null
         val state = JSONObject().put("admins", JSONArray().put("test-device"))
+            .put("consensus_members", JSONObject().put("1", JSONObject().put("peer", peer)
+                .put("addresses", JSONArray().put("/ip4/127.0.0.1/tcp/1/p2p/$peer"))))
         compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { BusinessAdminCard(state, "test-device", false) { action = it } } } }
         node(R.string.business_admin_open).performClick()
-        node(R.string.identity_field_member).performTextInput("stable-member")
-        node(R.string.business_roles).performTextInput("finance\nreviewer")
-        node(R.string.business_preview).performScrollTo().performClick()
-        node(R.string.business_submit).performScrollTo().performClick()
+        // Member roles have one authority page now: the business card no longer edits them.
+        node(R.string.identity_field_member).assertDoesNotExist()
+        node(R.string.business_replicas_load).scrollToIfScrollable().performClick()
+        node(R.string.business_replicas_preview).scrollToIfScrollable().performClick()
+        node(R.string.business_submit).scrollToIfScrollable().performClick()
         compose.runOnIdle { assertNull(action) }
         compose.onAllNodesWithText(text(R.string.business_submit)).onLast().performClick()
         compose.runOnIdle {
-            assertEquals("set_member_roles", action?.getString("type"))
-            assertEquals(2, action?.getJSONArray("roles")?.length())
+            assertEquals("set_consensus_members", action?.getString("type"))
+            assertEquals(peer, action?.getJSONObject("members")?.getJSONObject("1")?.getString("peer"))
         }
     }
     @Test fun auditAnchorRequiresExplicitConfirmationBeforeDispatch() {
@@ -82,7 +151,7 @@ class ManagementScreenTest {
         compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AuditAnchorCard(state, "test-device", false) { action = it } } } }
         node(R.string.audit_anchor_id).performTextInput("audit-test")
         node(R.string.audit_anchor_digest).performTextInput("a".repeat(64))
-        node(R.string.audit_anchor_submit).performScrollTo().performClick()
+        node(R.string.audit_anchor_submit).scrollToIfScrollable().performClick()
         compose.runOnIdle { assertNull(action) }
         compose.onAllNodesWithText(text(R.string.audit_anchor_submit)).onLast().performClick()
         compose.runOnIdle {

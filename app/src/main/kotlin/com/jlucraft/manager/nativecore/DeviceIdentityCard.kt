@@ -64,13 +64,15 @@ internal fun DeviceIdentityCard(publicIdentity: String) {
         if (exported) Text(stringResource(R.string.device_identity_exported), color = MaterialTheme.colorScheme.primary)
         if (peer.isNotBlank()) {
             Text(stringResource(R.string.device_identity_peer), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(shortIdentifier(peer), style = MaterialTheme.typography.bodyLarge, fontFamily = FontFamily.Monospace)
-        }
-        if (publicKey.isNotBlank()) {
-            Text(stringResource(R.string.device_identity_key), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(shortIdentifier(publicKey), style = MaterialTheme.typography.bodyLarge, fontFamily = FontFamily.Monospace)
+            IdentifierField(peer)
         }
         PublicJsonActions(publicIdentity, R.string.device_identity_title, enabled = !working)
+        CollapsibleSection(title = stringResource(R.string.profile_section_advanced)) {
+            if (publicKey.isNotBlank()) {
+                Text(stringResource(R.string.device_identity_key), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(publicKey, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+            }
+        }
         OutlinedButton(onClick = {
             activity?.documentPickerActive = true
             try { download.launch(fileName) } catch (_: Exception) { activity?.documentPickerActive = false; failed = true }
@@ -78,5 +80,49 @@ internal fun DeviceIdentityCard(publicIdentity: String) {
             Text(stringResource(R.string.device_identity_download))
         }
         IdentifierDetails(publicIdentity)
+    }
+}
+
+/**
+ * The applicant's next step: hand the public half of the identity to the chair. Device IDs and
+ * keys stay behind the technical-details fold so the task reads as sharing, not configuration.
+ */
+@Composable
+internal fun MemberIdentityShareSection(publicIdentity: String, busy: Boolean) {
+    val parsed = remember(publicIdentity) { runCatching { JSONObject(publicIdentity) }.getOrNull() }
+    val peer = parsed?.optString("peer").orEmpty()
+    val publicKey = parsed?.optString("public_key").orEmpty()
+    DetailSurface {
+        Text(
+            stringResource(R.string.startup_identity_share_helper),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (publicIdentity.isBlank()) {
+            Text(
+                stringResource(R.string.device_identity_empty),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@DetailSurface
+        }
+        // The chair asks for this material by device, so the device identifier is shown here as a
+        // summary above a disclosure the member may never open.
+        if (peer.isNotBlank()) {
+            Text(stringResource(R.string.device_identity_peer), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(peer, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
+        }
+        PublicJsonActions(publicIdentity, R.string.device_identity_title, enabled = !busy)
+        CollapsibleSection(
+            title = stringResource(R.string.startup_identity_share_details),
+            showLabel = R.string.startup_identity_share_details_show,
+            hideLabel = R.string.startup_identity_share_details_hide,
+        ) {
+            if (publicKey.isNotBlank()) {
+                Text(stringResource(R.string.device_identity_key), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(publicKey, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+            }
+            IdentifierDetails(publicIdentity)
+        }
     }
 }

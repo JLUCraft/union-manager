@@ -24,7 +24,14 @@ internal fun AuditAnchorCard(state: JSONObject?, device: String, busy: Boolean, 
         else IdentifierDetails(anchors.toString(2))
         if (!authorized) { Text(stringResource(R.string.audit_anchor_admin)); return@ManagerCard }
         OutlinedTextField(id, { id = it; invalid = false }, enabled = !busy, label = { Text(stringResource(R.string.audit_anchor_id)) }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(digest, { digest = it; invalid = false }, enabled = !busy, label = { Text(stringResource(R.string.audit_anchor_digest)) }, modifier = Modifier.fillMaxWidth())
+        // A checksum is long; a single-line field hides its tail, which is exactly the part an
+        // operator has to compare.
+        ChecksumField(
+            value = digest,
+            label = stringResource(R.string.audit_anchor_digest),
+            enabled = !busy,
+            hint = stringResource(R.string.audit_anchor_digest_hint),
+        ) { digest = it; invalid = false }
         if (invalid) Text(stringResource(R.string.audit_anchor_invalid), color = MaterialTheme.colorScheme.error)
         ActionButton(R.string.audit_anchor_submit, !busy && id.isNotBlank() && digest.isNotBlank(), kind = ActionKind.Confirmed, confirmText = R.string.audit_anchor_confirm) {
             try {

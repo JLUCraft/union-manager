@@ -9,7 +9,7 @@ internal const val CONNECTION_LINK_SCHEME = "folly"
 internal val GENESIS_HASH_PATTERN = Regex("[a-f0-9]{64}")
 private const val CONNECTION_LINK_HOST = "federation"
 
-/** Parses `folly://federation?address=…&peer=…&genesis=…`, the league link an organizer hands to members. */
+/** Parses `folly://federation?address=…&peer=…&genesis=…`, the organization connection link shared with members. */
 internal fun parseConnectionLink(text: String): ConnectionTarget? = runCatching {
     val uri = URI(text.trim())
     if (uri.scheme != CONNECTION_LINK_SCHEME || uri.rawAuthority != CONNECTION_LINK_HOST ||

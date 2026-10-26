@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Only peers from a previously verified consensus snapshot are candidates. */
-object OfficeConnection {
+object ApplicationConnection {
     fun execute(secret: ByteArray, input: JSONObject, replicas: JSONObject?): JSONObject {
         val candidates = mutableListOf(input.getString("peer") to input.getString("address"))
         replicas?.keys()?.asSequence()?.toList()?.sorted()?.forEach { id ->
@@ -16,17 +16,17 @@ object OfficeConnection {
                 if ((peer to address) !in candidates) candidates.add(peer to address)
             }
         }
-        var failure = JSONObject().put("error", "Office authority unavailable").put("error_code", "authority_unavailable")
+        var failure = JSONObject().put("error", "Application authority unavailable").put("error_code", "authority_unavailable")
         for ((peer, address) in candidates) {
             val probe = JSONObject(input.toString()).put("peer", peer).put("address", address)
             probe.remove("action")
-            val response = JSONObject(UnionNative.executeOffice(secret, probe.toString()))
+            val response = JSONObject(UnionNative.execute(secret, probe.toString()))
             if (!response.isNull("error")) { failure = response; continue }
             // Writes are attempted once, after selecting a reachable replica. A lost
             // write response must not silently replay the user's business action.
-            val result = if (input.has("action")) JSONObject(UnionNative.executeOffice(secret,
+            val result = if (input.has("action")) JSONObject(UnionNative.execute(secret,
                 JSONObject(input.toString()).put("peer", peer).put("address", address).toString())) else response
-            return result.put("office_peer", peer).put("office_address", address)
+            return result.put("application_peer", peer).put("application_address", address)
         }
         return failure
     }

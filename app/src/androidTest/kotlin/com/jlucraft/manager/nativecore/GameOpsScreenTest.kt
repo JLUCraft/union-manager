@@ -46,10 +46,10 @@ class GameOpsScreenTest {
                 })
             } }
         }
-        node(R.string.ops_refresh).performScrollTo().performClick()
-        node(R.string.ops_select).performScrollTo().performClick()
+        node(R.string.ops_refresh).scrollToIfScrollable().performClick()
+        node(R.string.ops_select).scrollToIfScrollable().performClick()
         compose.onNodeWithText("survival").performClick()
-        node(R.string.ops_logs).performScrollTo().performClick()
+        node(R.string.ops_logs).scrollToIfScrollable().performClick()
         compose.onNodeWithText("fixture server log").assertExists()
         compose.runOnIdle { assertEquals(listOf("list_instances", "logs"), calls); assertEquals("survival", state.selected) }
     }

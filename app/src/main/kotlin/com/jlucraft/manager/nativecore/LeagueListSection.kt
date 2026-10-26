@@ -7,11 +7,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -19,8 +19,15 @@ import androidx.compose.ui.unit.dp
 import com.jlucraft.manager.R
 import org.json.JSONObject
 
+/** League list pane: one summary row per league; selecting opens the detail pane. */
 @Composable
-fun LeagueListSection(state: JSONObject?, busy: Boolean, onStart: (String) -> Unit) {
+fun LeagueListSection(
+    state: JSONObject?,
+    busy: Boolean,
+    onConnect: (() -> Unit)? = null,
+    onStart: (String) -> Unit,
+    onOpen: ((String) -> Unit)? = null,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(SPACING_M)) {
         SectionHeader(stringResource(R.string.league_list_title))
         if (state == null) {
@@ -29,6 +36,7 @@ fun LeagueListSection(state: JSONObject?, busy: Boolean, onStart: (String) -> Un
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (onConnect != null) ActionButton(R.string.office_disconnected_action, enabled = !busy) { onConnect() }
         } else {
             val leagues = state.optJSONObject("leagues")
             if (leagues == null || leagues.length() == 0) {
@@ -39,7 +47,7 @@ fun LeagueListSection(state: JSONObject?, busy: Boolean, onStart: (String) -> Un
                 )
             } else {
                 leagues.keys().asSequence().toList().sorted().forEach { id ->
-                    LeagueCard(id = id, item = leagues.getJSONObject(id), busy = busy, onStart = onStart)
+                    key(id) { LeagueSummary(id = id, item = leagues.getJSONObject(id), onOpen = onOpen) }
                 }
             }
         }
@@ -47,7 +55,7 @@ fun LeagueListSection(state: JSONObject?, busy: Boolean, onStart: (String) -> Un
 }
 
 @Composable
-private fun LeagueCard(id: String, item: JSONObject, busy: Boolean, onStart: (String) -> Unit) {
+private fun LeagueSummary(id: String, item: JSONObject, onOpen: ((String) -> Unit)?) {
     val phase = item.getString("phase")
     val (phaseLabel, phaseActive) = phaseStatus(phase)
     val rules = item.getJSONObject("rules")
@@ -61,36 +69,21 @@ private fun LeagueCard(id: String, item: JSONObject, busy: Boolean, onStart: (St
         statusText = phaseLabel,
         statusActive = phaseActive,
     ) {
-        Text(stringResource(R.string.league_teams_title), style = MaterialTheme.typography.titleSmall)
-        val teams = item.getJSONObject("teams")
-        if (teams.length() == 0) {
-            Text(
-                stringResource(R.string.league_no_teams),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            teams.keys().asSequence().toList().sorted().forEach { team ->
-                TeamRow(team = team, roster = teams.getJSONObject(team))
+        Text(
+            stringResource(R.string.league_team_count, item.optJSONObject("teams")?.length() ?: 0),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (onOpen != null) {
+            TextButton(onClick = { onOpen(id) }, modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET)) {
+                Text(stringResource(R.string.league_open_detail))
             }
         }
-        if (phase == "Registration") {
-            Button(
-                onClick = { onStart(id) },
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET),
-            ) {
-                Text(stringResource(R.string.league_lock_and_start))
-            }
-        }
-        HorizontalDivider()
-        Scoreboard(stringResource(R.string.league_team_scoreboard), item.getJSONObject("team_scores"))
-        Scoreboard(stringResource(R.string.league_player_scoreboard), item.getJSONObject("player_scores"))
     }
 }
 
 @Composable
-private fun phaseStatus(phase: String): Pair<String, Boolean> = when (phase) {
+ internal fun phaseStatus(phase: String): Pair<String, Boolean> = when (phase) {
     "Registration" -> stringResource(R.string.league_phase_registration) to true
     "Playing", "Ongoing", "Running" -> stringResource(R.string.league_phase_ongoing) to false
     "Finished" -> stringResource(R.string.league_phase_finished) to false
@@ -98,7 +91,7 @@ private fun phaseStatus(phase: String): Pair<String, Boolean> = when (phase) {
 }
 
 @Composable
-private fun TeamRow(team: String, roster: JSONObject) {
+ internal fun TeamRow(team: String, roster: JSONObject) {
     val registered = roster.getBoolean("registered")
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(team, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -116,9 +109,8 @@ private fun TeamRow(team: String, roster: JSONObject) {
     }
 }
 
-/** Secondary stats block: a [DetailSurface] keeps it subordinate to the league card. */
 @Composable
-private fun Scoreboard(title: String, scores: JSONObject) {
+ internal fun Scoreboard(title: String, scores: JSONObject) {
     val entries = scores.keys().asSequence().toList().sortedByDescending { scores.getLong(it) }
     DetailSurface {
         Text(title, style = MaterialTheme.typography.titleSmall)

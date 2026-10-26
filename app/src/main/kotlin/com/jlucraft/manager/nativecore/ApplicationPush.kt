@@ -20,7 +20,7 @@ import org.unifiedpush.android.connector.data.PushMessage
 import java.security.MessageDigest
 
 /** Private capabilities are scoped to the authenticated device, office chain and VAPID key. */
-object OfficePush {
+object ApplicationPush {
     private const val STORE = "office_push"
     private const val CHANNEL = "office_tasks"
     private const val WAIT_STEPS = 40
@@ -108,7 +108,7 @@ object OfficePush {
         if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, context.getString(R.string.office_push_channel), NotificationManager.IMPORTANCE_HIGH))
-        val intent = Intent(context, MainActivity::class.java).putExtra("office_notice", notice)
+        val intent = Intent(context, MainActivity::class.java).putExtra("application_notice", notice)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val open = PendingIntent.getActivity(context, notice.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         manager.notify(notice, 0, Notification.Builder(context, CHANNEL)
@@ -119,10 +119,10 @@ object OfficePush {
     }
 }
 
-class OfficePushService : PushService() {
-    override fun onNewEndpoint(endpoint: PushEndpoint, instance: String) = OfficePush.endpoint(this, instance, endpoint)
-    override fun onMessage(message: PushMessage, instance: String) = OfficePush.message(this, instance, message)
-    override fun onRegistrationFailed(reason: FailedReason, instance: String) = OfficePush.select(this, instance)
-    override fun onTempUnavailable(instance: String) { OfficePush.clear(this, instance); OfficePush.select(this, instance) }
-    override fun onUnregistered(instance: String) { OfficePush.clear(this, instance); OfficePush.select(this, instance) }
+class ApplicationPushService : PushService() {
+    override fun onNewEndpoint(endpoint: PushEndpoint, instance: String) = ApplicationPush.endpoint(this, instance, endpoint)
+    override fun onMessage(message: PushMessage, instance: String) = ApplicationPush.message(this, instance, message)
+    override fun onRegistrationFailed(reason: FailedReason, instance: String) = ApplicationPush.select(this, instance)
+    override fun onTempUnavailable(instance: String) { ApplicationPush.clear(this, instance); ApplicationPush.select(this, instance) }
+    override fun onUnregistered(instance: String) { ApplicationPush.clear(this, instance); ApplicationPush.select(this, instance) }
 }
